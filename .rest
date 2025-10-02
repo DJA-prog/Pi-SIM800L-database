@@ -5,6 +5,9 @@
 ### Health Check
 GET {{baseUrl}}/health
 
+### Get System Configuration
+GET {{baseUrl}}/config
+
 ### Get All SMS Messages
 GET {{baseUrl}}/sms
 
@@ -154,6 +157,45 @@ GET {{baseUrl}}/battery
 
 ### Get Battery Debug Information
 GET {{baseUrl}}/battery/debug
+
+### Set Battery Monitoring Interval
+POST {{baseUrl}}/battery/set_interval
+Content-Type: application/json
+
+{
+  "interval": 300
+}
+
+### Restart SIM800 Module
+POST {{baseUrl}}/sim/restart
+Content-Type: application/json
+
+{
+  "confirm": true
+}
+
+### Set SIM PIN
+POST {{baseUrl}}/sim/set_pin
+Content-Type: application/json
+
+{
+  "pin": "1234"
+}
+
+### Get System Messages
+GET {{baseUrl}}/system/messages
+
+### Get System Messages with Limit
+GET {{baseUrl}}/system/messages?limit=50
+
+### System Reboot (use with caution!)
+POST {{baseUrl}}/system/reboot
+Content-Type: application/json
+
+{
+  "confirm": true,
+  "reason": "Manual reboot requested via API"
+}
 
 ### System Shutdown (use with caution!)
 POST {{baseUrl}}/system/shutdown

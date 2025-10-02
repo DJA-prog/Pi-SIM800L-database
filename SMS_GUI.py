@@ -463,12 +463,42 @@ class SMSGUIApp(QMainWindow):
         warning_label.setAlignment(Qt.AlignCenter)
         group_layout.addWidget(warning_label)
         
-        # Shutdown button
-        shutdown_btn = QPushButton("Emergency Shutdown")
-        shutdown_btn.setToolTip("Immediately shutdown the system (requires confirmation)")
+        # SIM800 Controls
+        sim_layout = QHBoxLayout()
+        restart_sim_btn = QPushButton("Restart SIM800")
+        restart_sim_btn.setToolTip("Restart the SIM800 module (requires confirmation)")
+        restart_sim_btn.clicked.connect(self.confirm_sim_restart)
+        restart_sim_btn.setStyleSheet("QPushButton { background-color: #FF9800; color: white; }")
+        sim_layout.addWidget(restart_sim_btn)
+        
+        set_pin_btn = QPushButton("Set SIM PIN")
+        set_pin_btn.setToolTip("Change the SIM card PIN")
+        set_pin_btn.clicked.connect(self.prompt_sim_pin)
+        set_pin_btn.setStyleSheet("QPushButton { background-color: #2196F3; color: white; }")
+        sim_layout.addWidget(set_pin_btn)
+        group_layout.addLayout(sim_layout)
+        
+        # System Controls
+        system_layout = QHBoxLayout()
+        reboot_btn = QPushButton("Reboot System")
+        reboot_btn.setToolTip("Reboot the entire system (requires confirmation)")
+        reboot_btn.clicked.connect(self.confirm_system_reboot)
+        reboot_btn.setStyleSheet("QPushButton { background-color: #FF5722; color: white; font-weight: bold; }")
+        system_layout.addWidget(reboot_btn)
+        
+        shutdown_btn = QPushButton("Shutdown System")
+        shutdown_btn.setToolTip("Shutdown the system (requires confirmation)")
         shutdown_btn.clicked.connect(self.confirm_system_shutdown)
         shutdown_btn.setStyleSheet("QPushButton { background-color: #D32F2F; color: white; font-weight: bold; }")
-        group_layout.addWidget(shutdown_btn)
+        system_layout.addWidget(shutdown_btn)
+        group_layout.addLayout(system_layout)
+        
+        # System Messages button
+        messages_btn = QPushButton("View System Messages")
+        messages_btn.setToolTip("View recent system log messages")
+        messages_btn.clicked.connect(self.get_system_messages)
+        messages_btn.setStyleSheet("QPushButton { background-color: #607D8B; color: white; }")
+        group_layout.addWidget(messages_btn)
         
         layout.addWidget(group)
     
@@ -576,12 +606,17 @@ class SMSGUIApp(QMainWindow):
                 message = response.get('message', 'Operation completed successfully')
                 self.display_message(message)
                 
-                # Special handling for shutdown response
-                if 'shutdown' in message.lower():
-                    QMessageBox.information(self, "Shutdown Initiated", 
-                                          "System shutdown has been initiated.\nThe device will power off shortly.")
+                # Special handling for system operation responses
+                if any(keyword in message.lower() for keyword in ['shutdown', 'reboot', 'restart', 'pin']):
+                    QMessageBox.information(self, "System Operation", message)
         else:
-            self.display_error(response.get('message', 'Unknown error'))
+            # Handle warning status (partial success)
+            if response.get('status') == 'warning':
+                message = response.get('message', 'Operation completed with warnings')
+                QMessageBox.warning(self, "Warning", message)
+                self.display_message(message)
+            else:
+                self.display_error(response.get('message', 'Unknown error'))
     
     def on_api_error(self, error_msg):
         """Handle API error"""
@@ -835,6 +870,71 @@ class SMSGUIApp(QMainWindow):
                     "reason": "Manual shutdown requested via SMS GUI"
                 }
                 self.make_api_request("system/shutdown", "POST", data)
+    
+    def confirm_system_reboot(self):
+        """Confirm and execute system reboot"""
+        reply = QMessageBox.question(
+            self, 
+            "Confirm Reboot",
+            "Are you sure you want to reboot the system?\n\nThis will restart the device and all services!",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            data = {
+                "confirm": True,
+                "reason": "Manual reboot requested via SMS GUI"
+            }
+            self.make_api_request("system/reboot", "POST", data)
+    
+    def confirm_sim_restart(self):
+        """Confirm and restart SIM800 module"""
+        reply = QMessageBox.question(
+            self, 
+            "Confirm SIM800 Restart",
+            "Are you sure you want to restart the SIM800 module?\n\nThis may temporarily interrupt SMS services!",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            data = {"confirm": True}
+            self.make_api_request("sim/restart", "POST", data)
+    
+    def prompt_sim_pin(self):
+        """Prompt for new SIM PIN and set it"""
+        from PyQt5.QtWidgets import QInputDialog
+        
+        pin, ok = QInputDialog.getText(
+            self, 
+            "Set SIM PIN", 
+            "Enter new 4-digit SIM PIN:",
+            text=""
+        )
+        
+        if ok and pin:
+            # Validate PIN
+            if not pin.isdigit() or len(pin) != 4:
+                QMessageBox.warning(self, "Invalid PIN", "PIN must be exactly 4 digits!")
+                return
+            
+            # Confirm PIN change
+            reply = QMessageBox.question(
+                self,
+                "Confirm PIN Change",
+                f"Are you sure you want to change the SIM PIN to: {pin}?\n\nMake sure you remember this PIN!",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                data = {"pin": pin}
+                self.make_api_request("sim/set_pin", "POST", data)
+    
+    def get_system_messages(self):
+        """Get system messages from API"""
+        self.make_api_request("system/messages")
     
     def update_battery_display(self, battery_data):
         """Update battery status display"""

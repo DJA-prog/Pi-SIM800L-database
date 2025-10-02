@@ -9,19 +9,28 @@ import queue
 import subprocess
 import os
 from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+
+# Load environment variables from .env.server file
+load_dotenv('.env.server')
 
 # ---------------- CONFIG ----------------
-RX_PIN = 13   # GPIO for SIM800L TX -> Pi RX
-TX_PIN = 12   # GPIO for SIM800L RX <- Pi TX
-BAUDRATE = 9600
-SIM_PIN = "9438"
-DB_FILE = "sms_messages.db"
+RX_PIN = int(os.getenv('RX_PIN', 13))   # GPIO for SIM800L TX -> Pi RX
+TX_PIN = int(os.getenv('TX_PIN', 12))   # GPIO for SIM800L RX <- Pi TX
+BAUDRATE = int(os.getenv('BAUDRATE', 9600))
+SIM_PIN = os.getenv('SIM_PIN', '9438')
+DB_FILE = os.getenv('DB_FILE', 'sms_messages.db')
 
 # Battery monitoring config
-BATTERY_CHECK_INTERVAL = 60  # Check battery every 60 seconds
-LOW_BATTERY_THRESHOLD = 3.3  # Shutdown threshold in volts
-BATTERY_WARNING_THRESHOLD = 3.5  # Warning threshold in volts
-ENABLE_AUTO_SHUTDOWN = True  # Set to False to disable automatic shutdown
+BATTERY_CHECK_INTERVAL = int(os.getenv('BATTERY_CHECK_INTERVAL', 300))  # Check battery every 5 minutes
+LOW_BATTERY_THRESHOLD = float(os.getenv('LOW_BATTERY_THRESHOLD', 3.3))  # Shutdown threshold in volts
+BATTERY_WARNING_THRESHOLD = float(os.getenv('BATTERY_WARNING_THRESHOLD', 3.5))  # Warning threshold in volts
+ENABLE_AUTO_SHUTDOWN = os.getenv('ENABLE_AUTO_SHUTDOWN', 'true').lower() == 'true'  # Auto shutdown setting
+
+# API Server config
+API_HOST = os.getenv('API_HOST', '0.0.0.0')
+API_PORT = int(os.getenv('API_PORT', 5000))
+API_DEBUG = os.getenv('API_DEBUG', 'false').lower() == 'true'
 # -----------------------------------------
 
 # Global variables for battery monitoring
@@ -72,6 +81,23 @@ def db_execute(query, params=()):
             if error:
                 raise error
             return result
+
+def log_system_message(message):
+    """Log a system message to both SMS and system_messages tables"""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        # Log to SMS table for backward compatibility
+        db_execute(
+            "INSERT INTO sms (sender, timestamp, text) VALUES (?, ?, ?)",
+            ("SYSTEM", timestamp, message)
+        )
+        # Log to dedicated system messages table
+        db_execute(
+            "INSERT INTO system_messages (timestamp, message) VALUES (?, ?)",
+            (timestamp, message)
+        )
+    except Exception as e:
+        print(f"[System] Failed to log message: {e}")
 
 # --- Flask API Setup ---
 app = Flask(__name__)
@@ -237,6 +263,49 @@ def health_check():
             'error': str(e)
         }), 500
 
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """Get current system configuration"""
+    try:
+        config = {
+            'gpio': {
+                'rx_pin': RX_PIN,
+                'tx_pin': TX_PIN,
+                'baudrate': BAUDRATE
+            },
+            'database': {
+                'file': DB_FILE
+            },
+            'battery': {
+                'check_interval': BATTERY_CHECK_INTERVAL,
+                'warning_threshold': BATTERY_WARNING_THRESHOLD,
+                'shutdown_threshold': LOW_BATTERY_THRESHOLD,
+                'auto_shutdown_enabled': ENABLE_AUTO_SHUTDOWN,
+                'current_voltage': last_battery_voltage,
+                'status': battery_status,
+                'warnings': low_battery_warnings
+            },
+            'api': {
+                'host': API_HOST,
+                'port': API_PORT,
+                'debug': API_DEBUG
+            },
+            'sim': {
+                'pin_configured': bool(SIM_PIN)  # Don't expose actual PIN
+            }
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'data': config
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not retrieve configuration',
+            'error': str(e)
+        }), 500
+
 @app.route('/api/battery', methods=['GET'])
 def get_battery_status():
     """Get current battery status"""
@@ -371,16 +440,19 @@ def manual_shutdown():
     """Manually trigger system shutdown"""
     try:
         data = request.get_json()
-        force = data.get('force', False) if data else False
+        confirm = data.get('confirm', False) if data else False
+        reason = data.get('reason', 'Manual shutdown requested via API') if data else 'Manual shutdown requested'
+        
+        if not confirm:
+            return jsonify({
+                'status': 'error',
+                'message': 'Shutdown requires confirmation. Set confirm=true in request body.'
+            }), 400
         
         # Log shutdown request
-        db_execute(
-            "INSERT INTO sms (sender, timestamp, text) VALUES (?, ?, ?)",
-            ("SYSTEM", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-             "Manual shutdown requested via API")
-        )
+        log_system_message(f"Shutdown initiated: {reason}")
         
-        if force or ENABLE_AUTO_SHUTDOWN:
+        if ENABLE_AUTO_SHUTDOWN:
             # Start shutdown in background thread to allow response
             def delayed_shutdown():
                 time.sleep(2)  # Give time for response
@@ -398,7 +470,7 @@ def manual_shutdown():
         else:
             return jsonify({
                 'status': 'error',
-                'message': 'Auto-shutdown disabled. Use force=true to override.'
+                'message': 'Auto-shutdown disabled in configuration'
             }), 400
             
     except Exception as e:
@@ -408,9 +480,241 @@ def manual_shutdown():
             'error': str(e)
         }), 500
 
+@app.route('/api/system/reboot', methods=['POST'])
+def reboot_host():
+    """Reboot the Linux host system"""
+    try:
+        data = request.get_json()
+        confirm = data.get('confirm', False) if data else False
+        reason = data.get('reason', 'Manual reboot requested via API') if data else 'Manual reboot requested'
+        
+        if not confirm:
+            return jsonify({
+                'status': 'error',
+                'message': 'Reboot requires confirmation. Set confirm=true in request body.'
+            }), 400
+        
+        # Log reboot request
+        log_system_message(f"System reboot initiated: {reason}")
+        
+        def delayed_reboot():
+            time.sleep(2)  # Give time for response
+            try:
+                subprocess.run(["sudo", "reboot"], check=True)
+            except:
+                os.system("sudo reboot")
+        
+        threading.Thread(target=delayed_reboot, daemon=True).start()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'System reboot initiated'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not initiate reboot',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/system/messages', methods=['GET'])
+def get_system_messages():
+    """Get recent system messages"""
+    try:
+        limit = request.args.get('limit', 100)
+        try:
+            limit = int(limit)
+            if limit > 1000:
+                limit = 1000  # Cap at 1000 messages
+        except:
+            limit = 100
+            
+        result = db_execute(
+            "SELECT * FROM system_messages ORDER BY timestamp DESC LIMIT ?", 
+            (limit,)
+        )
+        return jsonify({
+            'status': 'success',
+            'data': result,
+            'count': len(result)
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not retrieve system messages',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sim/restart', methods=['POST'])
+def restart_sim800():
+    """Restart the SIM800 module via AT command"""
+    try:
+        data = request.get_json()
+        confirm = data.get('confirm', False) if data else False
+        
+        if not confirm:
+            return jsonify({
+                'status': 'error',
+                'message': 'SIM800 restart requires confirmation. Set confirm=true in request body.'
+            }), 400
+        
+        log_system_message("SIM800 restart command sent")
+        
+        # Send restart command to SIM800
+        resp = send_at("AT+CFUN=1,1", delay=3)
+        
+        # Give time for module to reboot
+        time.sleep(5)
+        
+        # Try to reconnect
+        try:
+            test_resp = send_at("AT", delay=2)
+            if "OK" in test_resp:
+                log_system_message("SIM800 restart completed successfully")
+                return jsonify({
+                    'status': 'success',
+                    'message': 'SIM800 restart completed',
+                    'response': resp.strip(),
+                    'test_response': test_resp.strip()
+                }), 200
+            else:
+                log_system_message("SIM800 restart may have failed - no response")
+                return jsonify({
+                    'status': 'warning',
+                    'message': 'SIM800 restart command sent but module not responding',
+                    'response': resp.strip()
+                }), 200
+        except Exception as e:
+            log_system_message(f"SIM800 restart test failed: {str(e)}")
+            return jsonify({
+                'status': 'warning',
+                'message': 'SIM800 restart command sent but cannot verify status',
+                'response': resp.strip(),
+                'error': str(e)
+            }), 200
+            
+    except Exception as e:
+        log_system_message(f"SIM800 restart failed: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to restart SIM800',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sim/set_pin', methods=['POST'])
+def set_sim_pin():
+    """Set a new SIM PIN"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No JSON data provided'
+            }), 400
+            
+        new_pin = data.get('pin')
+        if not new_pin:
+            return jsonify({
+                'status': 'error',
+                'message': 'PIN parameter is required'
+            }), 400
+            
+        if not str(new_pin).isdigit() or len(str(new_pin)) != 4:
+            return jsonify({
+                'status': 'error',
+                'message': 'PIN must be a 4-digit numeric string'
+            }), 400
+        
+        log_system_message(f"SIM PIN change requested to: {new_pin}")
+        
+        # Send new PIN to SIM800
+        resp = send_at(f"AT+CPIN={new_pin}", delay=2)
+        
+        if "OK" in resp:
+            log_system_message(f"SIM PIN successfully changed to: {new_pin}")
+            
+            # Update global SIM_PIN variable
+            global SIM_PIN
+            SIM_PIN = str(new_pin)
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'SIM PIN successfully set to {new_pin}',
+                'response': resp.strip()
+            }), 200
+        else:
+            log_system_message(f"SIM PIN change failed: {resp}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to set SIM PIN',
+                'response': resp.strip()
+            }), 400
+            
+    except Exception as e:
+        log_system_message(f"SIM PIN change error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not set SIM PIN',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/battery/set_interval', methods=['POST'])
+def set_battery_interval():
+    """Set battery monitoring interval (in seconds)"""
+    global BATTERY_CHECK_INTERVAL
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No JSON data provided'
+            }), 400
+            
+        interval = data.get('interval')
+        if interval is None:
+            return jsonify({
+                'status': 'error',
+                'message': 'interval parameter is required'
+            }), 400
+            
+        try:
+            interval = int(interval)
+        except:
+            return jsonify({
+                'status': 'error',
+                'message': 'interval must be a number'
+            }), 400
+            
+        if interval < 30 or interval > 3600:
+            return jsonify({
+                'status': 'error',
+                'message': 'Interval must be between 30 and 3600 seconds (30 sec - 1 hour)'
+            }), 400
+        
+        old_interval = BATTERY_CHECK_INTERVAL
+        BATTERY_CHECK_INTERVAL = interval
+        
+        log_system_message(f"Battery monitoring interval changed from {old_interval}s to {interval}s")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Battery check interval set to {interval} seconds',
+            'old_interval': old_interval,
+            'new_interval': interval
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to set battery interval',
+            'error': str(e)
+        }), 500
+
 def start_api_server():
     """Start the Flask API server in a separate thread"""
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    print(f"Starting API server on {API_HOST}:{API_PORT}")
+    app.run(host=API_HOST, port=API_PORT, debug=API_DEBUG, threaded=True)
 
 # --- pigpio setup ---
 pi = pigpio.pi()
@@ -592,29 +896,15 @@ def check_battery_and_shutdown():
         low_battery_warnings += 1
         print(f"[Battery] WARNING: Low battery {voltage:.3f}V (threshold: {BATTERY_WARNING_THRESHOLD:.1f}V)")
         
-        # Log warning to database
-        try:
-            db_execute(
-                "INSERT INTO sms (sender, timestamp, text) VALUES (?, ?, ?)",
-                ("SYSTEM", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                 f"Battery warning: {voltage:.3f}V ({charge_level}%)")
-            )
-        except:
-            pass
+        # Log warning using new system message function
+        log_system_message(f"Battery warning: {voltage:.3f}V ({charge_level}%)")
     
     # Check for critical battery level
     if voltage <= LOW_BATTERY_THRESHOLD:
         print(f"[Battery] CRITICAL: Battery voltage {voltage:.3f}V <= {LOW_BATTERY_THRESHOLD:.1f}V")
         
-        # Log critical battery to database
-        try:
-            db_execute(
-                "INSERT INTO sms (sender, timestamp, text) VALUES (?, ?, ?)",
-                ("SYSTEM", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
-                 f"CRITICAL: Battery {voltage:.3f}V ({charge_level}%) - Initiating shutdown")
-            )
-        except:
-            pass
+        # Log critical battery using new system message function
+        log_system_message(f"CRITICAL: Battery {voltage:.3f}V ({charge_level}%) - Initiating shutdown")
         
         if ENABLE_AUTO_SHUTDOWN:
             print("[Battery] Initiating system shutdown...")
@@ -655,6 +945,13 @@ def init_db():
             text TEXT
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS system_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            message TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -668,12 +965,28 @@ db_worker.start()
 # Start the API server in a separate thread
 api_thread = threading.Thread(target=start_api_server, daemon=True)
 api_thread.start()
-print("API server started on http://0.0.0.0:5000")
+print(f"API server started on http://{API_HOST}:{API_PORT}")
 
 # Start battery monitoring thread
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
 battery_thread.start()
-print(f"Battery monitoring started (threshold: {LOW_BATTERY_THRESHOLD}V)")
+print(f"Battery monitoring started (interval: {BATTERY_CHECK_INTERVAL}s, threshold: {LOW_BATTERY_THRESHOLD}V, auto-shutdown: {ENABLE_AUTO_SHUTDOWN})")
+
+# Display configuration
+print("\n" + "="*50)
+print("SMS CAPTURE SYSTEM CONFIGURATION")
+print("="*50)
+print(f"GPIO RX Pin: {RX_PIN}")
+print(f"GPIO TX Pin: {TX_PIN}")
+print(f"Baudrate: {BAUDRATE}")
+print(f"SIM PIN: {'*' * len(SIM_PIN)}")  # Hide actual PIN for security
+print(f"Database: {DB_FILE}")
+print(f"Battery Check Interval: {BATTERY_CHECK_INTERVAL}s")
+print(f"Battery Warning Threshold: {BATTERY_WARNING_THRESHOLD}V")
+print(f"Battery Shutdown Threshold: {LOW_BATTERY_THRESHOLD}V")
+print(f"Auto Shutdown: {ENABLE_AUTO_SHUTDOWN}")
+print(f"API Server: http://{API_HOST}:{API_PORT}")
+print("="*50)
 
 # --- SIM setup ---
 flush_uart()
