@@ -1,0 +1,8 @@
+# GUI Requirements
+PyQt5>=5.15.0
+requests>=2.25.0
+python-dotenv>=0.19.0
+
+# API Requirements (if running the full stack)
+flask>=2.0.0
+pigpio>=1.78

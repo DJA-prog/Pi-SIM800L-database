@@ -1,0 +1,165 @@
+# SMS Database API Tests
+# Base URL for the API
+@baseUrl = http://piHome02:5000/api
+
+### Health Check
+GET {{baseUrl}}/health
+
+### Get All SMS Messages
+GET {{baseUrl}}/sms
+
+### Get SMS by Sender (replace with actual phone number)
+GET {{baseUrl}}/sms/sender/+1234567890
+
+### Search SMS by Keyword
+GET {{baseUrl}}/sms/search?keyword=hello
+
+### Get SMS by Date Range
+GET {{baseUrl}}/sms/date-range?start=2025-10-01 00:00:00&end=2025-10-02 23:59:59
+
+### Get Database Statistics
+GET {{baseUrl}}/stats
+
+### Get Battery Status
+GET {{baseUrl}}/battery
+
+### Get Battery History
+GET {{baseUrl}}/battery/history
+
+### Manual System Shutdown (use with caution!)
+POST {{baseUrl}}/system/shutdown
+Content-Type: application/json
+
+{
+  "force": false
+}
+
+### Execute Custom Query - Count all SMS
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT COUNT(*) as total_sms FROM sms"
+}
+
+### Execute Custom Query - Get Recent SMS
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT * FROM sms ORDER BY timestamp DESC LIMIT 5"
+}
+
+### Execute Custom Query - Get SMS from specific sender
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT * FROM sms WHERE sender LIKE ? ORDER BY timestamp DESC",
+  "params": ["+123%"]
+}
+
+### Execute Custom Query - Get SMS containing keyword
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT sender, timestamp, text FROM sms WHERE text LIKE ? ORDER BY timestamp DESC",
+  "params": ["%test%"]
+}
+
+### Execute Custom Query - Get unique senders
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT DISTINCT sender, COUNT(*) as message_count FROM sms GROUP BY sender ORDER BY message_count DESC"
+}
+
+### Execute Custom Query - Get SMS by date
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT * FROM sms WHERE DATE(timestamp) = ? ORDER BY timestamp DESC",
+  "params": ["2025-10-01"]
+}
+
+### Test Error Handling - Invalid Query
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT * FROM non_existent_table"
+}
+
+### Test Error Handling - Missing Query Parameter
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "params": ["test"]
+}
+
+### Test Error Handling - Invalid JSON
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT * FROM sms",
+  "invalid_json":
+}
+
+### Test Error Handling - Missing Keyword in Search
+GET {{baseUrl}}/sms/search
+
+### Test Error Handling - Missing Date Parameters
+GET {{baseUrl}}/sms/date-range?start=2025-10-01
+
+### Test Database Schema - Show Table Structure
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "PRAGMA table_info(sms)"
+}
+
+### Insert Test Data (if needed for testing)
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "INSERT INTO sms (sender, timestamp, text) VALUES (?, ?, ?)",
+  "params": ["+1234567890", "2025-10-02 12:00:00", "Test message from REST client"]
+}
+
+### Get SMS from last hour
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT * FROM sms WHERE datetime(timestamp) >= datetime('now', '-1 hour') ORDER BY timestamp DESC"
+}
+
+### Get SMS statistics by sender
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT sender, COUNT(*) as count, MIN(timestamp) as first_message, MAX(timestamp) as last_message FROM sms GROUP BY sender ORDER BY count DESC"
+}
+
+### Get Battery Status
+GET {{baseUrl}}/battery
+
+### Get Battery Debug Information
+GET {{baseUrl}}/battery/debug
+
+### System Shutdown (use with caution!)
+POST {{baseUrl}}/system/shutdown
+Content-Type: application/json
+
+{
+  "confirm": true,
+  "reason": "Manual shutdown requested via API"
+}
