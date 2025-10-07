@@ -37,6 +37,7 @@ API_DEBUG = os.getenv('API_DEBUG', 'false').lower() == 'true'
 last_battery_voltage = 0.0
 battery_status = "unknown"
 low_battery_warnings = 0
+battery_voltage_history = []  # Track voltage changes for charging detection
 
 # UART access lock for thread safety
 uart_lock = threading.Lock()
@@ -546,6 +547,130 @@ def get_system_messages():
             'error': str(e)
         }), 500
 
+@app.route('/api/system/logs', methods=['GET'])
+def get_system_logs():
+    """Get system logs with filtering options"""
+    try:
+        limit = request.args.get('limit', 100)
+        filter_text = request.args.get('filter', '')
+        
+        try:
+            limit = int(limit)
+            if limit > 1000:
+                limit = 1000
+        except:
+            limit = 100
+        
+        # Build query with optional text filtering
+        if filter_text:
+            query = "SELECT * FROM system_messages WHERE message LIKE ? ORDER BY timestamp DESC LIMIT ?"
+            params = (f'%{filter_text}%', limit)
+        else:
+            query = "SELECT * FROM system_messages ORDER BY timestamp DESC LIMIT ?"
+            params = (limit,)
+        
+        result = db_execute(query, params)
+        
+        return jsonify({
+            'status': 'success',
+            'data': result,
+            'count': len(result),
+            'filter_applied': filter_text if filter_text else None
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not retrieve system logs',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sms/unique-senders', methods=['GET'])
+def get_unique_senders():
+    """Get all unique SMS senders with message counts"""
+    try:
+        result = db_execute("""
+            SELECT sender, COUNT(*) as message_count, 
+                   MIN(timestamp) as first_message,
+                   MAX(timestamp) as last_message
+            FROM sms 
+            WHERE sender != 'SYSTEM'
+            GROUP BY sender 
+            ORDER BY message_count DESC
+        """)
+        
+        return jsonify({
+            'status': 'success',
+            'data': result,
+            'count': len(result)
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not retrieve unique senders',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sms/date-range-info', methods=['GET'])
+def get_sms_date_range_info():
+    """Get the datetime difference between first and last SMS"""
+    try:
+        # Get first and last SMS timestamps
+        first_sms = db_execute("SELECT timestamp FROM sms ORDER BY timestamp ASC LIMIT 1")
+        last_sms = db_execute("SELECT timestamp FROM sms ORDER BY timestamp DESC LIMIT 1")
+        
+        if not first_sms or not last_sms:
+            return jsonify({
+                'status': 'success',
+                'data': {
+                    'first_sms': None,
+                    'last_sms': None,
+                    'time_difference': None,
+                    'days_difference': 0,
+                    'total_messages': 0
+                }
+            }), 200
+        
+        first_timestamp = first_sms[0][0]
+        last_timestamp = last_sms[0][0]
+        
+        # Calculate time difference
+        try:
+            from datetime import datetime
+            first_dt = datetime.strptime(first_timestamp, "%Y-%m-%d %H:%M:%S")
+            last_dt = datetime.strptime(last_timestamp, "%Y-%m-%d %H:%M:%S")
+            time_diff = last_dt - first_dt
+            days_diff = time_diff.days
+            
+            # Get total message count
+            total_count = db_execute("SELECT COUNT(*) FROM sms")[0][0]
+            
+            return jsonify({
+                'status': 'success',
+                'data': {
+                    'first_sms': first_timestamp,
+                    'last_sms': last_timestamp,
+                    'time_difference': str(time_diff),
+                    'days_difference': days_diff,
+                    'hours_difference': round(time_diff.total_seconds() / 3600, 2),
+                    'total_messages': total_count
+                }
+            }), 200
+        except ValueError as e:
+            return jsonify({
+                'status': 'error',
+                'message': 'Could not parse timestamps',
+                'error': str(e),
+                'first_timestamp': first_timestamp,
+                'last_timestamp': last_timestamp
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not calculate SMS date range',
+            'error': str(e)
+        }), 500
+
 @app.route('/api/sim/restart', methods=['POST'])
 def restart_sim800():
     """Restart the SIM800 module via AT command"""
@@ -711,6 +836,443 @@ def set_battery_interval():
             'error': str(e)
         }), 500
 
+@app.route('/api/sim/status', methods=['GET'])
+def get_sim_status():
+    """Get comprehensive SIM status including signal, operator, and battery info"""
+    try:
+        # Get signal strength
+        signal_info = get_signal_strength()
+        
+        # Get network operator
+        operator_info = get_network_operator()
+        
+        # Get battery status
+        battery_info = get_battery_voltage()
+        
+        # Compile comprehensive status
+        sim_status = {
+            'timestamp': datetime.datetime.now().isoformat(),
+            'signal': signal_info,
+            'operator': operator_info,
+            'battery': battery_info,
+            'battery_history_points': len(battery_voltage_history),
+            'modem_responsive': True  # If we got this far, modem is responding
+        }
+        
+        # Add status summary
+        status_summary = []
+        if signal_info:
+            status_summary.append(f"Signal: {signal_info['signal_quality']}")
+        if operator_info:
+            status_summary.append(f"Operator: {operator_info['operator']}")
+        if battery_info:
+            status_summary.append(f"Battery: {battery_info['voltage']:.2f}V ({battery_info.get('charging_status', 'unknown')})")
+        
+        sim_status['status_summary'] = " | ".join(status_summary)
+        
+        return jsonify({
+            'status': 'success',
+            'data': sim_status
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not retrieve SIM status',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sim/signal', methods=['GET'])
+def get_sim_signal():
+    """Get SIM signal strength information"""
+    try:
+        signal_info = get_signal_strength()
+        if signal_info:
+            return jsonify({
+                'status': 'success',
+                'data': signal_info
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to get signal strength'
+            }), 500
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not retrieve signal strength',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sim/operator', methods=['GET'])
+def get_sim_operator():
+    """Get SIM network operator information"""
+    try:
+        operator_info = get_network_operator()
+        if operator_info:
+            return jsonify({
+                'status': 'success',
+                'data': operator_info
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to get network operator'
+            }), 500
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not retrieve network operator',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/battery/voltage-history', methods=['GET'])
+def get_battery_voltage_history():
+    """Get battery voltage history for trend analysis"""
+    try:
+        limit = request.args.get('limit', 10)
+        try:
+            limit = int(limit)
+            if limit > 50:
+                limit = 50  # Cap at 50 readings
+        except:
+            limit = 10
+        
+        # Return recent voltage history
+        recent_history = battery_voltage_history[-limit:] if battery_voltage_history else []
+        
+        # Calculate some trend statistics if we have enough data
+        trend_info = {}
+        if len(recent_history) >= 2:
+            voltages = [reading['voltage'] for reading in recent_history]
+            trend_info = {
+                'min_voltage': min(voltages),
+                'max_voltage': max(voltages),
+                'avg_voltage': sum(voltages) / len(voltages),
+                'voltage_range': max(voltages) - min(voltages),
+                'charging_status': determine_battery_charging_status()
+            }
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'readings': recent_history,
+                'count': len(recent_history),
+                'trend_analysis': trend_info
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not retrieve battery history',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/data/delete-all', methods=['POST'])
+def delete_all_data():
+    """Delete all data from both SMS and system_messages tables"""
+    try:
+        data = request.get_json()
+        confirm = data.get('confirm', False) if data else False
+        
+        if not confirm:
+            return jsonify({
+                'status': 'error',
+                'message': 'Delete operation requires confirmation. Set confirm=true in request body.'
+            }), 400
+        
+        # Get counts before deletion
+        sms_count = db_execute("SELECT COUNT(*) FROM sms")[0][0]
+        system_count = db_execute("SELECT COUNT(*) FROM system_messages")[0][0]
+        
+        # Delete all data
+        db_execute("DELETE FROM sms")
+        db_execute("DELETE FROM system_messages")
+        
+        # Reset auto-increment counters
+        db_execute("DELETE FROM sqlite_sequence WHERE name IN ('sms', 'system_messages')")
+        
+        log_system_message(f"All data deleted: {sms_count} SMS messages, {system_count} system messages")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'All data deleted successfully',
+            'deleted': {
+                'sms_messages': sms_count,
+                'system_messages': system_count,
+                'total': sms_count + system_count
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to delete all data',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/data/delete-sms', methods=['POST'])
+def delete_sms_only():
+    """Delete only SMS messages, keep system messages"""
+    try:
+        data = request.get_json()
+        confirm = data.get('confirm', False) if data else False
+        
+        if not confirm:
+            return jsonify({
+                'status': 'error',
+                'message': 'Delete operation requires confirmation. Set confirm=true in request body.'
+            }), 400
+        
+        # Get count before deletion
+        sms_count = db_execute("SELECT COUNT(*) FROM sms WHERE sender != 'SYSTEM'")[0][0]
+        
+        # Delete only non-system SMS messages
+        db_execute("DELETE FROM sms WHERE sender != 'SYSTEM'")
+        
+        log_system_message(f"SMS messages deleted: {sms_count} messages")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'SMS messages deleted successfully',
+            'deleted': {
+                'sms_messages': sms_count
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to delete SMS messages',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/data/clear-system-logs', methods=['POST'])
+def clear_system_logs():
+    """Clear only system log messages"""
+    try:
+        data = request.get_json()
+        confirm = data.get('confirm', False) if data else False
+        
+        if not confirm:
+            return jsonify({
+                'status': 'error',
+                'message': 'Clear operation requires confirmation. Set confirm=true in request body.'
+            }), 400
+        
+        # Get count before deletion
+        system_count = db_execute("SELECT COUNT(*) FROM system_messages")[0][0]
+        system_sms_count = db_execute("SELECT COUNT(*) FROM sms WHERE sender = 'SYSTEM'")[0][0]
+        
+        # Clear system messages
+        db_execute("DELETE FROM system_messages")
+        db_execute("DELETE FROM sms WHERE sender = 'SYSTEM'")
+        
+        log_system_message(f"System logs cleared: {system_count} system messages, {system_sms_count} system SMS entries")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'System logs cleared successfully',
+            'deleted': {
+                'system_messages': system_count,
+                'system_sms': system_sms_count,
+                'total': system_count + system_sms_count
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to clear system logs',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/data/delete-by-sender', methods=['POST'])
+def delete_by_sender():
+    """Delete messages from a specific sender"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No JSON data provided'
+            }), 400
+            
+        sender = data.get('sender')
+        confirm = data.get('confirm', False)
+        
+        if not sender:
+            return jsonify({
+                'status': 'error',
+                'message': 'Sender parameter is required'
+            }), 400
+            
+        if not confirm:
+            return jsonify({
+                'status': 'error',
+                'message': 'Delete operation requires confirmation. Set confirm=true in request body.'
+            }), 400
+        
+        # Get count before deletion
+        count = db_execute("SELECT COUNT(*) FROM sms WHERE sender = ?", (sender,))[0][0]
+        
+        if count == 0:
+            return jsonify({
+                'status': 'success',
+                'message': f'No messages found from sender: {sender}',
+                'deleted': 0
+            }), 200
+        
+        # Delete messages from sender
+        db_execute("DELETE FROM sms WHERE sender = ?", (sender,))
+        
+        log_system_message(f"Messages deleted from sender '{sender}': {count} messages")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Deleted {count} messages from sender: {sender}',
+            'deleted': count,
+            'sender': sender
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to delete messages by sender',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/data/delete-by-keyword', methods=['POST'])
+def delete_by_keyword():
+    """Delete messages containing a specific keyword"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No JSON data provided'
+            }), 400
+            
+        keyword = data.get('keyword')
+        confirm = data.get('confirm', False)
+        
+        if not keyword:
+            return jsonify({
+                'status': 'error',
+                'message': 'Keyword parameter is required'
+            }), 400
+            
+        if not confirm:
+            return jsonify({
+                'status': 'error',
+                'message': 'Delete operation requires confirmation. Set confirm=true in request body.'
+            }), 400
+        
+        # Get count before deletion
+        count = db_execute("SELECT COUNT(*) FROM sms WHERE text LIKE ?", (f'%{keyword}%',))[0][0]
+        
+        if count == 0:
+            return jsonify({
+                'status': 'success',
+                'message': f'No messages found containing keyword: {keyword}',
+                'deleted': 0
+            }), 200
+        
+        # Delete messages containing keyword
+        db_execute("DELETE FROM sms WHERE text LIKE ?", (f'%{keyword}%',))
+        
+        log_system_message(f"Messages deleted containing keyword '{keyword}': {count} messages")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Deleted {count} messages containing keyword: {keyword}',
+            'deleted': count,
+            'keyword': keyword
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to delete messages by keyword',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/data/backup', methods=['GET'])
+def create_backup():
+    """Create and return a database backup"""
+    try:
+        import shutil
+        import tempfile
+        from flask import send_file
+        
+        # Create a timestamp for the backup filename
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"sms_backup_{timestamp}.db"
+        
+        # Create a temporary copy of the database
+        temp_backup_path = os.path.join(tempfile.gettempdir(), backup_filename)
+        shutil.copy2(DB_FILE, temp_backup_path)
+        
+        log_system_message(f"Database backup created: {backup_filename}")
+        
+        # Return the file as a download
+        return send_file(
+            temp_backup_path,
+            as_attachment=True,
+            download_name=backup_filename,
+            mimetype='application/x-sqlite3'
+        )
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to create backup',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/data/stats', methods=['GET'])
+def get_data_stats():
+    """Get detailed data statistics for delete operations"""
+    try:
+        # Get detailed counts
+        total_sms = db_execute("SELECT COUNT(*) FROM sms")[0][0]
+        user_sms = db_execute("SELECT COUNT(*) FROM sms WHERE sender != 'SYSTEM'")[0][0]
+        system_sms = db_execute("SELECT COUNT(*) FROM sms WHERE sender = 'SYSTEM'")[0][0]
+        system_messages = db_execute("SELECT COUNT(*) FROM system_messages")[0][0]
+        
+        # Get unique senders count
+        unique_senders = db_execute("SELECT COUNT(DISTINCT sender) FROM sms WHERE sender != 'SYSTEM'")[0][0]
+        
+        # Get date range
+        first_sms = db_execute("SELECT MIN(timestamp) FROM sms")
+        last_sms = db_execute("SELECT MAX(timestamp) FROM sms")
+        
+        stats = {
+            'total_messages': total_sms,
+            'user_sms': user_sms,
+            'system_sms': system_sms,
+            'system_messages': system_messages,
+            'unique_senders': unique_senders,
+            'date_range': {
+                'first': first_sms[0][0] if first_sms and first_sms[0][0] else None,
+                'last': last_sms[0][0] if last_sms and last_sms[0][0] else None
+            },
+            'database_file': DB_FILE,
+            'timestamp': datetime.datetime.now().isoformat()
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'data': stats
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to get data statistics',
+            'error': str(e)
+        }), 500
+
 def start_api_server():
     """Start the Flask API server in a separate thread"""
     print(f"Starting API server on {API_HOST}:{API_PORT}")
@@ -792,9 +1354,150 @@ def send_at(cmd, delay=0.5):
         print(f">>> {cmd.strip()} \n{response}")
         return response
 
+def get_signal_strength():
+    """Get signal strength and quality from SIM800L using AT+CSQ"""
+    try:
+        resp = send_at("AT+CSQ", delay=2)
+        print(f"[Signal] Raw AT+CSQ response: '{resp}'")
+        
+        # Parse response: +CSQ: <rssi>,<ber>
+        # rssi: 0-31 (99=not known or not detectable)
+        # ber: bit error rate 0-7 (99=not known or not detectable)
+        
+        match = re.search(r'\+CSQ:\s*(\d+),(\d+)', resp)
+        if match:
+            rssi = int(match.group(1))
+            ber = int(match.group(2))
+            
+            # Convert RSSI to dBm: dBm = -113 + 2*rssi (for rssi 0-30)
+            if rssi == 99:
+                signal_dbm = None
+                signal_quality = "Unknown"
+            elif rssi == 0:
+                signal_dbm = None
+                signal_quality = "No Signal"
+            else:
+                signal_dbm = -113 + (2 * rssi)
+                # Determine signal quality
+                if rssi >= 20:
+                    signal_quality = "Excellent"
+                elif rssi >= 15:
+                    signal_quality = "Good"
+                elif rssi >= 10:
+                    signal_quality = "Fair"
+                elif rssi >= 5:
+                    signal_quality = "Poor"
+                else:
+                    signal_quality = "Very Poor"
+            
+            return {
+                'rssi': rssi,
+                'ber': ber,
+                'signal_dbm': signal_dbm,
+                'signal_quality': signal_quality,
+                'raw_response': resp.strip()
+            }
+        else:
+            print(f"[Signal] Failed to parse CSQ response: '{resp}'")
+            return None
+            
+    except Exception as e:
+        print(f"[Signal] Error getting signal strength: {e}")
+        return None
+
+def get_network_operator():
+    """Get current network operator using AT+COPS"""
+    try:
+        resp = send_at("AT+COPS?", delay=2)
+        print(f"[Operator] Raw AT+COPS response: '{resp}'")
+        
+        # Parse response: +COPS: <mode>,<format>,<oper>,<act>
+        # mode: 0=automatic, 1=manual, 2=deregister, 3=set format only, 4=manual/automatic
+        # format: 0=long alphanumeric, 1=short alphanumeric, 2=numeric
+        # oper: operator name/code
+        # act: access technology (0=GSM, 2=UTRAN, 7=E-UTRAN)
+        
+        # Try to match different response formats
+        patterns = [
+            r'\+COPS:\s*(\d+),(\d+),"([^"]+)",(\d+)',  # Full response with quotes
+            r'\+COPS:\s*(\d+),(\d+),([^,]+),(\d+)',    # Without quotes
+            r'\+COPS:\s*(\d+),(\d+),"([^"]+)"',        # Without access technology
+            r'\+COPS:\s*(\d+),(\d+),([^,\r\n]+)'       # Minimal format
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, resp)
+            if match:
+                groups = match.groups()
+                mode = int(groups[0])
+                format_type = int(groups[1])
+                operator = groups[2].strip()
+                act = int(groups[3]) if len(groups) > 3 else None
+                
+                # Decode access technology
+                access_tech = {
+                    0: "GSM",
+                    1: "GSM Compact",
+                    2: "UTRAN",
+                    3: "GSM w/EGPRS",
+                    4: "UTRAN w/HSDPA",
+                    5: "UTRAN w/HSUPA",
+                    6: "UTRAN w/HSDPA and HSUPA",
+                    7: "E-UTRAN"
+                }.get(act, f"Unknown ({act})" if act is not None else "Unknown")
+                
+                return {
+                    'operator': operator,
+                    'mode': mode,
+                    'format': format_type,
+                    'access_technology': access_tech,
+                    'raw_response': resp.strip()
+                }
+        
+        print(f"[Operator] Failed to parse COPS response: '{resp}'")
+        return None
+        
+    except Exception as e:
+        print(f"[Operator] Error getting network operator: {e}")
+        return None
+
+def determine_battery_charging_status():
+    """Determine if battery is charging or discharging based on voltage history"""
+    global battery_voltage_history
+    
+    if len(battery_voltage_history) < 2:
+        return "insufficient_data"
+    
+    # Look at recent voltage changes (last 5 readings)
+    recent_history = battery_voltage_history[-5:]
+    
+    if len(recent_history) < 2:
+        return "insufficient_data"
+    
+    # Calculate voltage trend
+    voltage_changes = []
+    for i in range(1, len(recent_history)):
+        change = recent_history[i]['voltage'] - recent_history[i-1]['voltage']
+        voltage_changes.append(change)
+    
+    # Average voltage change
+    avg_change = sum(voltage_changes) / len(voltage_changes)
+    
+    # Determine charging status based on voltage trend
+    # Threshold for detecting charging (mV change)
+    charging_threshold = 0.01  # 10mV increase suggests charging
+    discharging_threshold = -0.005  # 5mV decrease suggests discharging
+    
+    if avg_change > charging_threshold:
+        return "charging"
+    elif avg_change < discharging_threshold:
+        return "discharging"
+    else:
+        return "stable"
+
 def get_battery_voltage():
     """Get battery voltage from SIM800L using AT+CBC command"""
-    global last_battery_voltage, battery_status
+    global last_battery_voltage, battery_status, battery_voltage_history
     try:
         # Send AT+CBC command to get battery charge
         resp = send_at("AT+CBC", delay=3)  # Longer delay for battery command
@@ -838,12 +1541,28 @@ def get_battery_voltage():
                 last_battery_voltage = voltage_v
                 battery_status = "measured"  # Simple status indicating measurement was successful
                 
+                # Add to voltage history for charging detection
+                current_time = datetime.datetime.now()
+                battery_voltage_history.append({
+                    'timestamp': current_time.isoformat(),
+                    'voltage': voltage_v,
+                    'charge_level': bcl
+                })
+                
+                # Keep only last 20 readings for trend analysis
+                if len(battery_voltage_history) > 20:
+                    battery_voltage_history = battery_voltage_history[-20:]
+                
+                # Determine charging status
+                charging_status = determine_battery_charging_status()
+                
                 return {
                     'voltage': voltage_v,
                     'voltage_mv': voltage_mv,
                     'charge_level': bcl,
                     'status': 'measured',
-                    'timestamp': datetime.datetime.now().isoformat(),
+                    'charging_status': charging_status,
+                    'timestamp': current_time.isoformat(),
                     'raw_response': resp.strip()  # Include raw response for debugging
                 }
             elif len(groups) >= 2:

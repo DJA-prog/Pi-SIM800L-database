@@ -178,6 +178,12 @@ class SMSGUIApp(QMainWindow):
         # Battery Monitoring
         self.create_battery_group(layout)
         
+        # SIM Information
+        self.create_sim_info_group(layout)
+        
+        # Data Management
+        self.create_data_management_group(layout)
+        
         # System Control
         self.create_system_group(layout)
         
@@ -326,6 +332,22 @@ class SMSGUIApp(QMainWindow):
         stats_btn.clicked.connect(self.get_statistics)
         group_layout.addWidget(stats_btn)
         
+        # New buttons for system queries
+        unique_senders_btn = QPushButton("Get Unique Senders")
+        unique_senders_btn.setToolTip("Get all unique SMS senders with message counts")
+        unique_senders_btn.clicked.connect(self.get_unique_senders)
+        group_layout.addWidget(unique_senders_btn)
+        
+        date_range_btn = QPushButton("Get Date Range Info")
+        date_range_btn.setToolTip("Get time difference between first and last SMS")
+        date_range_btn.clicked.connect(self.get_sms_date_range_info)
+        group_layout.addWidget(date_range_btn)
+        
+        system_logs_btn = QPushButton("Get System Logs")
+        system_logs_btn.setToolTip("Get filtered system log messages")
+        system_logs_btn.clicked.connect(self.get_system_logs)
+        group_layout.addWidget(system_logs_btn)
+        
         layout.addWidget(group)
     
     def create_filter_queries_group(self, layout):
@@ -450,6 +472,123 @@ class SMSGUIApp(QMainWindow):
         self.battery_timer = QTimer()
         self.battery_timer.timeout.connect(self.get_battery_status)
         self.battery_timer_running = False
+    
+    def create_sim_info_group(self, layout):
+        """Create SIM information group"""
+        group = QGroupBox("SIM Information")
+        group.setStyleSheet("QGroupBox { font-weight: bold; color: #1976D2; }")
+        group_layout = QVBoxLayout(group)
+        
+        # SIM status display
+        self.sim_status_label = QLabel("SIM status unknown")
+        self.sim_status_label.setWordWrap(True)
+        self.sim_status_label.setStyleSheet("font-size: 10px; padding: 5px; background-color: #f0f8ff; border: 1px solid #1976D2; border-radius: 3px;")
+        group_layout.addWidget(self.sim_status_label)
+        
+        # SIM action buttons
+        sim_buttons_layout = QHBoxLayout()
+        
+        get_sim_status_btn = QPushButton("Get SIM Status")
+        get_sim_status_btn.setToolTip("Get comprehensive SIM status (signal, operator, battery)")
+        get_sim_status_btn.clicked.connect(self.get_sim_status)
+        get_sim_status_btn.setStyleSheet("QPushButton { background-color: #1976D2; color: white; }")
+        sim_buttons_layout.addWidget(get_sim_status_btn)
+        
+        get_signal_btn = QPushButton("Signal")
+        get_signal_btn.setToolTip("Get signal strength only")
+        get_signal_btn.clicked.connect(self.get_signal_strength)
+        get_signal_btn.setStyleSheet("QPushButton { background-color: #388E3C; color: white; }")
+        sim_buttons_layout.addWidget(get_signal_btn)
+        
+        group_layout.addLayout(sim_buttons_layout)
+        
+        # Second row of buttons
+        sim_buttons_layout2 = QHBoxLayout()
+        
+        get_operator_btn = QPushButton("Operator")
+        get_operator_btn.setToolTip("Get network operator information")
+        get_operator_btn.clicked.connect(self.get_network_operator)
+        get_operator_btn.setStyleSheet("QPushButton { background-color: #F57C00; color: white; }")
+        sim_buttons_layout2.addWidget(get_operator_btn)
+        
+        get_battery_history_btn = QPushButton("Battery History")
+        get_battery_history_btn.setToolTip("Get battery voltage history and trends")
+        get_battery_history_btn.clicked.connect(self.get_battery_history)
+        get_battery_history_btn.setStyleSheet("QPushButton { background-color: #7B1FA2; color: white; }")
+        sim_buttons_layout2.addWidget(get_battery_history_btn)
+        
+        group_layout.addLayout(sim_buttons_layout2)
+        
+        layout.addWidget(group)
+    
+    def create_data_management_group(self, layout):
+        """Create data management group for delete and backup operations"""
+        group = QGroupBox("Data Management")
+        group.setStyleSheet("QGroupBox { font-weight: bold; color: #E65100; }")
+        group_layout = QVBoxLayout(group)
+        
+        # Warning label
+        warning_label = QLabel("⚠️ Destructive operations!")
+        warning_label.setStyleSheet("color: red; font-weight: bold; font-size: 10px;")
+        warning_label.setAlignment(Qt.AlignCenter)
+        group_layout.addWidget(warning_label)
+        
+        # Backup button (safe operation)
+        backup_btn = QPushButton("📥 Create Backup")
+        backup_btn.setToolTip("Download a backup copy of the database")
+        backup_btn.clicked.connect(self.create_backup)
+        backup_btn.setStyleSheet("QPushButton { background-color: #2E7D32; color: white; font-weight: bold; }")
+        group_layout.addWidget(backup_btn)
+        
+        # Data stats button
+        stats_btn = QPushButton("📊 Data Statistics")
+        stats_btn.setToolTip("View detailed data statistics")
+        stats_btn.clicked.connect(self.get_data_stats)
+        stats_btn.setStyleSheet("QPushButton { background-color: #1976D2; color: white; }")
+        group_layout.addWidget(stats_btn)
+        
+        # Delete operations
+        delete_layout1 = QHBoxLayout()
+        
+        delete_sms_btn = QPushButton("Delete SMS")
+        delete_sms_btn.setToolTip("Delete only SMS messages (keep system logs)")
+        delete_sms_btn.clicked.connect(self.confirm_delete_sms)
+        delete_sms_btn.setStyleSheet("QPushButton { background-color: #F57C00; color: white; }")
+        delete_layout1.addWidget(delete_sms_btn)
+        
+        clear_logs_btn = QPushButton("Clear Logs")
+        clear_logs_btn.setToolTip("Clear only system log messages")
+        clear_logs_btn.clicked.connect(self.confirm_clear_logs)
+        clear_logs_btn.setStyleSheet("QPushButton { background-color: #FF5722; color: white; }")
+        delete_layout1.addWidget(clear_logs_btn)
+        
+        group_layout.addLayout(delete_layout1)
+        
+        # Selective delete operations
+        delete_layout2 = QHBoxLayout()
+        
+        delete_sender_btn = QPushButton("Delete by Sender")
+        delete_sender_btn.setToolTip("Delete messages from specific sender")
+        delete_sender_btn.clicked.connect(self.prompt_delete_by_sender)
+        delete_sender_btn.setStyleSheet("QPushButton { background-color: #7B1FA2; color: white; }")
+        delete_layout2.addWidget(delete_sender_btn)
+        
+        delete_keyword_btn = QPushButton("Delete by Keyword")
+        delete_keyword_btn.setToolTip("Delete messages containing keyword")
+        delete_keyword_btn.clicked.connect(self.prompt_delete_by_keyword)
+        delete_keyword_btn.setStyleSheet("QPushButton { background-color: #C2185B; color: white; }")
+        delete_layout2.addWidget(delete_keyword_btn)
+        
+        group_layout.addLayout(delete_layout2)
+        
+        # Nuclear option
+        delete_all_btn = QPushButton("🗑️ DELETE ALL DATA")
+        delete_all_btn.setToolTip("Delete ALL data (SMS + system logs)")
+        delete_all_btn.clicked.connect(self.confirm_delete_all)
+        delete_all_btn.setStyleSheet("QPushButton { background-color: #D32F2F; color: white; font-weight: bold; }")
+        group_layout.addWidget(delete_all_btn)
+        
+        layout.addWidget(group)
     
     def create_system_group(self, layout):
         """Create system control group"""
@@ -588,17 +727,36 @@ class SMSGUIApp(QMainWindow):
             if 'data' in response:
                 data = response['data']
                 
-                # Check if this is battery data and update status
-                if isinstance(data, dict) and 'voltage' in data:
-                    self.update_battery_display(data)
+                # Special handling for different API endpoints
+                if hasattr(self, 'api_worker') and self.api_worker.url:
+                    url = self.api_worker.url
+                    
+                    if 'sim/status' in url:
+                        self.update_sim_status_display(data)
+                        # Also display in table for export
+                        self.display_results(data)
+                    elif 'sim/signal' in url:
+                        self.update_sim_status_display(data, signal_only=True)
+                        self.display_results(data)
+                    elif 'sim/operator' in url:
+                        self.update_sim_status_display(data, operator_only=True)
+                        self.display_results(data)
+                    elif 'battery' in url and isinstance(data, dict) and 'voltage' in data:
+                        self.update_battery_display(data)
+                        self.display_results(data)
+                    else:
+                        self.display_results(data)
+                else:
+                    # Fallback - check data type for battery data
+                    if isinstance(data, dict) and 'voltage' in data:
+                        self.update_battery_display(data)
+                    self.display_results(data)
                     
                 if data and len(data) > 0:
-                    self.display_results(data)
-                    count = response.get('count', len(data))
+                    count = response.get('count', len(data) if isinstance(data, list) else 1)
                     self.results_count_label.setText(f"{count} results")
                 else:
                     # Empty result set
-                    self.display_results([])  # Clear table
                     self.results_count_label.setText("0 results")
                     self.display_message("No data found matching your query")
             else:
@@ -607,8 +765,8 @@ class SMSGUIApp(QMainWindow):
                 self.display_message(message)
                 
                 # Special handling for system operation responses
-                if any(keyword in message.lower() for keyword in ['shutdown', 'reboot', 'restart', 'pin']):
-                    QMessageBox.information(self, "System Operation", message)
+                if any(keyword in message.lower() for keyword in ['shutdown', 'reboot', 'restart', 'pin', 'delete', 'clear']):
+                    QMessageBox.information(self, "Operation Result", message)
         else:
             # Handle warning status (partial success)
             if response.get('status') == 'warning':
@@ -793,24 +951,111 @@ class SMSGUIApp(QMainWindow):
         
         if filename:
             try:
+                import csv
                 with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-                    if isinstance(self.current_data[0], (list, tuple)):
-                        writer = csv.writer(csvfile)
-                        # Write headers
-                        headers = ["ID", "Sender", "Timestamp", "Text"][:len(self.current_data[0])]
-                        writer.writerow(headers)
-                        # Write data
-                        writer.writerows(self.current_data)
+                    
+                    # Handle different data types
+                    if isinstance(self.current_data, dict):
+                        # Single dictionary (like SIM status)
+                        self._export_dict_to_csv(csvfile, self.current_data)
+                    elif isinstance(self.current_data, list) and len(self.current_data) > 0:
+                        if isinstance(self.current_data[0], (list, tuple)):
+                            # List of lists/tuples (database rows)
+                            self._export_rows_to_csv(csvfile, self.current_data)
+                        elif isinstance(self.current_data[0], dict):
+                            # List of dictionaries
+                            self._export_dict_list_to_csv(csvfile, self.current_data)
+                        else:
+                            # List of simple values
+                            writer = csv.writer(csvfile)
+                            writer.writerow(["Value"])
+                            for item in self.current_data:
+                                writer.writerow([str(item)])
                     else:
-                        # Handle dictionary data
-                        writer = csv.DictWriter(csvfile, fieldnames=self.current_data.keys())
-                        writer.writeheader()
-                        writer.writerow(self.current_data)
+                        # Fallback for other types
+                        writer = csv.writer(csvfile)
+                        writer.writerow(["Data"])
+                        writer.writerow([str(self.current_data)])
                 
                 QMessageBox.information(self, "Success", f"Data exported to {filename}")
                 self.statusBar().showMessage(f"Exported to {filename}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to export: {str(e)}")
+    
+    def _export_dict_to_csv(self, csvfile, data_dict):
+        """Export a dictionary to CSV in a readable format"""
+        import csv
+        writer = csv.writer(csvfile)
+        
+        def flatten_dict(d, parent_key='', sep='_'):
+            """Flatten nested dictionary"""
+            items = []
+            for k, v in d.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, dict):
+                    items.extend(flatten_dict(v, new_key, sep=sep).items())
+                elif isinstance(v, list):
+                    items.append((new_key, str(v)))
+                else:
+                    items.append((new_key, v))
+            return dict(items)
+        
+        flattened = flatten_dict(data_dict)
+        
+        # Write headers and values
+        writer.writerow(["Field", "Value"])
+        for key, value in flattened.items():
+            writer.writerow([key, str(value)])
+    
+    def _export_rows_to_csv(self, csvfile, rows):
+        """Export list of rows (tuples/lists) to CSV"""
+        import csv
+        writer = csv.writer(csvfile)
+        
+        # Try to determine headers based on data
+        if len(rows) > 0:
+            num_cols = len(rows[0])
+            if num_cols == 4:
+                headers = ["ID", "Sender", "Timestamp", "Text"]
+            elif num_cols == 3:
+                headers = ["ID", "Timestamp", "Message"]
+            elif num_cols == 2:
+                headers = ["Field", "Value"]
+            else:
+                headers = [f"Column_{i+1}" for i in range(num_cols)]
+            
+            writer.writerow(headers)
+        
+        # Write data rows
+        writer.writerows(rows)
+    
+    def _export_dict_list_to_csv(self, csvfile, dict_list):
+        """Export list of dictionaries to CSV"""
+        import csv
+        
+        if not dict_list:
+            return
+        
+        # Get all unique keys from all dictionaries
+        all_keys = set()
+        for d in dict_list:
+            if isinstance(d, dict):
+                all_keys.update(d.keys())
+        
+        fieldnames = sorted(list(all_keys))
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for item in dict_list:
+            if isinstance(item, dict):
+                # Flatten any nested structures
+                flattened_item = {}
+                for key, value in item.items():
+                    if isinstance(value, (dict, list)):
+                        flattened_item[key] = str(value)
+                    else:
+                        flattened_item[key] = value
+                writer.writerow(flattened_item)
     
     def get_battery_status(self):
         """Get battery status from API"""
@@ -936,25 +1181,322 @@ class SMSGUIApp(QMainWindow):
         """Get system messages from API"""
         self.make_api_request("system/messages")
     
+    def get_unique_senders(self):
+        """Get unique SMS senders with message counts"""
+        self.make_api_request("sms/unique-senders")
+    
+    def get_sms_date_range_info(self):
+        """Get SMS date range information"""
+        self.make_api_request("sms/date-range-info")
+    
+    def get_system_logs(self):
+        """Get system logs with optional filtering"""
+        from PyQt5.QtWidgets import QInputDialog
+        
+        filter_text, ok = QInputDialog.getText(
+            self, 
+            "Filter System Logs", 
+            "Enter filter text (leave empty for all logs):",
+            text=""
+        )
+        
+        if ok:
+            if filter_text.strip():
+                self.make_api_request(f"system/logs?filter={filter_text.strip()}")
+            else:
+                self.make_api_request("system/logs")
+    
+    def get_sim_status(self):
+        """Get comprehensive SIM status"""
+        self.make_api_request("sim/status")
+    
+    def get_signal_strength(self):
+        """Get signal strength information"""
+        self.make_api_request("sim/signal")
+    
+    def get_network_operator(self):
+        """Get network operator information"""
+        self.make_api_request("sim/operator")
+    
+    def get_battery_history(self):
+        """Get battery voltage history"""
+        self.make_api_request("battery/voltage-history")
+    
+    def get_data_stats(self):
+        """Get detailed data statistics"""
+        self.make_api_request("data/stats")
+    
+    def create_backup(self):
+        """Create and download database backup"""
+        try:
+            import requests
+            from PyQt5.QtWidgets import QFileDialog
+            
+            if not hasattr(self, 'api_base_url'):
+                self.display_error("API connection not configured. Please set host and port.")
+                return
+            
+            # Show file save dialog
+            filename, _ = QFileDialog.getSaveFileName(
+                self, 
+                "Save Database Backup", 
+                f"sms_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
+                "SQLite Database (*.db);;All Files (*)"
+            )
+            
+            if not filename:
+                return  # User cancelled
+            
+            # Download backup
+            url = f"{self.api_base_url}/data/backup"
+            response = requests.get(url, timeout=30)
+            
+            if response.status_code == 200:
+                with open(filename, 'wb') as f:
+                    f.write(response.content)
+                self.statusBar().showMessage(f"Backup saved to {filename}", 5000)
+                QMessageBox.information(self, "Success", f"Database backup saved to:\n{filename}")
+            else:
+                self.display_error(f"Failed to create backup: HTTP {response.status_code}")
+                
+        except Exception as e:
+            self.display_error(f"Failed to create backup: {str(e)}")
+    
+    def confirm_delete_all(self):
+        """Confirm and delete ALL data"""
+        reply = QMessageBox.warning(
+            self,
+            "⚠️ DELETE ALL DATA",
+            "This will permanently delete ALL data:\n"
+            "• All SMS messages\n"
+            "• All system log messages\n"
+            "• Everything in the database\n\n"
+            "This action CANNOT be undone!\n\n"
+            "Are you absolutely sure?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Second confirmation
+            reply2 = QMessageBox.critical(
+                self,
+                "FINAL WARNING",
+                "LAST CHANCE!\n\n"
+                "This will delete EVERYTHING!\n"
+                "All SMS messages and system logs will be lost forever!\n\n"
+                "Type 'DELETE' to confirm:",
+                QMessageBox.Ok | QMessageBox.Cancel,
+                QMessageBox.Cancel
+            )
+            
+            if reply2 == QMessageBox.Ok:
+                from PyQt5.QtWidgets import QInputDialog
+                confirm_text, ok = QInputDialog.getText(
+                    self, "Type DELETE to confirm", "Type 'DELETE' to proceed:"
+                )
+                
+                if ok and confirm_text.strip().upper() == "DELETE":
+                    data = {"confirm": True}
+                    self.make_api_request("data/delete-all", "POST", data)
+                else:
+                    QMessageBox.information(self, "Cancelled", "Delete operation cancelled.")
+    
+    def confirm_delete_sms(self):
+        """Confirm and delete SMS messages only"""
+        reply = QMessageBox.question(
+            self,
+            "Delete SMS Messages",
+            "This will delete all SMS messages but keep system logs.\n\n"
+            "Are you sure you want to proceed?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            data = {"confirm": True}
+            self.make_api_request("data/delete-sms", "POST", data)
+    
+    def confirm_clear_logs(self):
+        """Confirm and clear system logs"""
+        reply = QMessageBox.question(
+            self,
+            "Clear System Logs",
+            "This will delete all system log messages but keep SMS messages.\n\n"
+            "Are you sure you want to proceed?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            data = {"confirm": True}
+            self.make_api_request("data/clear-system-logs", "POST", data)
+    
+    def prompt_delete_by_sender(self):
+        """Prompt for sender and delete messages"""
+        from PyQt5.QtWidgets import QInputDialog
+        
+        sender, ok = QInputDialog.getText(
+            self,
+            "Delete by Sender",
+            "Enter sender number/name to delete all messages from:",
+            text=""
+        )
+        
+        if ok and sender.strip():
+            reply = QMessageBox.question(
+                self,
+                "Confirm Delete by Sender",
+                f"Delete ALL messages from sender: {sender.strip()}\n\n"
+                f"This action cannot be undone!\n\n"
+                f"Are you sure?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                data = {
+                    "sender": sender.strip(),
+                    "confirm": True
+                }
+                self.make_api_request("data/delete-by-sender", "POST", data)
+    
+    def prompt_delete_by_keyword(self):
+        """Prompt for keyword and delete messages"""
+        from PyQt5.QtWidgets import QInputDialog
+        
+        keyword, ok = QInputDialog.getText(
+            self,
+            "Delete by Keyword",
+            "Enter keyword to delete all messages containing it:",
+            text=""
+        )
+        
+        if ok and keyword.strip():
+            reply = QMessageBox.question(
+                self,
+                "Confirm Delete by Keyword",
+                f"Delete ALL messages containing: '{keyword.strip()}'\n\n"
+                f"This action cannot be undone!\n\n"
+                f"Are you sure?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                data = {
+                    "keyword": keyword.strip(),
+                    "confirm": True
+                }
+                self.make_api_request("data/delete-by-keyword", "POST", data)
+    
+    def update_sim_status_display(self, sim_data, signal_only=False, operator_only=False):
+        """Update SIM status display with comprehensive information"""
+        try:
+            if not hasattr(self, 'sim_status_label'):
+                return
+            
+            if signal_only and 'signal_quality' in sim_data:
+                # Signal strength only
+                rssi = sim_data.get('rssi', 'Unknown')
+                signal_quality = sim_data.get('signal_quality', 'Unknown')
+                signal_dbm = sim_data.get('signal_dbm', 'Unknown')
+                
+                display_text = f"📶 Signal: {signal_quality}"
+                if signal_dbm != 'Unknown' and signal_dbm is not None:
+                    display_text += f"\nStrength: {signal_dbm} dBm (RSSI: {rssi})"
+                
+                color = "#388E3C" if signal_quality in ["Excellent", "Good"] else "#F57C00" if signal_quality == "Fair" else "#D32F2F"
+                
+            elif operator_only and 'operator' in sim_data:
+                # Operator info only
+                operator = sim_data.get('operator', 'Unknown')
+                access_tech = sim_data.get('access_technology', 'Unknown')
+                
+                display_text = f"📡 Operator: {operator}"
+                if access_tech != 'Unknown':
+                    display_text += f"\nTechnology: {access_tech}"
+                
+                color = "#F57C00"
+                
+            else:
+                # Comprehensive SIM status
+                display_text = "📱 SIM Status:\n"
+                
+                # Signal information
+                if 'signal' in sim_data and sim_data['signal']:
+                    signal = sim_data['signal']
+                    quality = signal.get('signal_quality', 'Unknown')
+                    display_text += f"📶 Signal: {quality}"
+                    if signal.get('signal_dbm') is not None:
+                        display_text += f" ({signal['signal_dbm']} dBm)"
+                    display_text += "\n"
+                
+                # Operator information
+                if 'operator' in sim_data and sim_data['operator']:
+                    operator = sim_data['operator']
+                    op_name = operator.get('operator', 'Unknown')
+                    display_text += f"📡 Operator: {op_name}\n"
+                
+                # Battery information
+                if 'battery' in sim_data and sim_data['battery']:
+                    battery = sim_data['battery']
+                    voltage = battery.get('voltage', 'Unknown')
+                    charging_status = battery.get('charging_status', 'Unknown')
+                    if voltage != 'Unknown':
+                        display_text += f"🔋 Battery: {voltage}V ({charging_status})\n"
+                
+                # Status summary
+                if 'status_summary' in sim_data:
+                    display_text += f"\n{sim_data['status_summary']}"
+                
+                # Determine overall status color
+                if 'signal' in sim_data and sim_data['signal']:
+                    quality = sim_data['signal'].get('signal_quality', 'Unknown')
+                    if quality in ["Excellent", "Good"]:
+                        color = "#2E7D32"
+                    elif quality == "Fair":
+                        color = "#F57C00"
+                    else:
+                        color = "#D32F2F"
+                else:
+                    color = "#1976D2"
+            
+            # Update the display
+            self.sim_status_label.setText(display_text.strip())
+            self.sim_status_label.setStyleSheet(
+                f"font-size: 10px; padding: 5px; "
+                f"background-color: #f0f8ff; border: 2px solid {color}; "
+                f"border-radius: 3px; color: {color};"
+            )
+            
+        except Exception as e:
+            self.sim_status_label.setText(f"Error updating SIM display: {str(e)}")
+            self.sim_status_label.setStyleSheet(
+                "font-size: 10px; padding: 5px; background-color: #f0f8ff; "
+                "border: 1px solid red; border-radius: 3px; color: red;"
+            )
+    
     def update_battery_display(self, battery_data):
         """Update battery status display"""
         try:
             voltage = battery_data.get('voltage', 'Unknown')
             status = battery_data.get('status', 'Unknown')
             charge_level = battery_data.get('charge_level', 'Unknown')
+            charging_status = battery_data.get('charging_status', 'unknown')
             timestamp = battery_data.get('timestamp', 'Unknown')
             warnings = battery_data.get('low_battery_warnings', 0)
             
-            # Determine status color and icon based on voltage only
+            # Determine status color and icon based on voltage and charging status
             if isinstance(voltage, (int, float)):
                 if voltage >= 4.0:
-                    icon = "🔋"
+                    icon = "🔋" if charging_status != "charging" else "⚡"
                     color = "green"
                 elif voltage >= 3.7:
-                    icon = "🔋"
+                    icon = "🔋" if charging_status != "charging" else "⚡"
                     color = "orange"
                 elif voltage >= 3.3:
-                    icon = "🪫"
+                    icon = "🪫" if charging_status != "charging" else "⚡"
                     color = "red"
                 else:
                     icon = "⚠️"
@@ -963,10 +1505,22 @@ class SMSGUIApp(QMainWindow):
                 icon = "❓"
                 color = "gray"
             
-            # Format display text without charging status
+            # Format display text with charging status
             display_text = f"{icon} Voltage: {voltage}V"
             if isinstance(charge_level, (int, float)):
                 display_text += f"\nLevel: {charge_level}%"
+            
+            # Add charging status
+            charging_icons = {
+                "charging": "⚡ Charging",
+                "discharging": "↘️ Discharging", 
+                "stable": "➖ Stable",
+                "insufficient_data": "❔ Unknown",
+                "unknown": "❔ Unknown"
+            }
+            charging_display = charging_icons.get(charging_status, f"❔ {charging_status}")
+            display_text += f"\nStatus: {charging_display}"
+            
             display_text += f"\nUpdated: {timestamp}"
             
             if warnings > 0:
