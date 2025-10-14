@@ -11,6 +11,14 @@ import os
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
+# Import OLED display module
+try:
+    from oled_display import OLEDDisplay
+    OLED_AVAILABLE = True
+except ImportError:
+    print("⚠️ OLED display module not available - install requirements: pip install luma.oled pillow")
+    OLED_AVAILABLE = False
+
 # Load environment variables from .env.server file
 load_dotenv('.env.server')
 
@@ -31,6 +39,10 @@ ENABLE_AUTO_SHUTDOWN = os.getenv('ENABLE_AUTO_SHUTDOWN', 'true').lower() == 'tru
 API_HOST = os.getenv('API_HOST', '0.0.0.0')
 API_PORT = int(os.getenv('API_PORT', 5000))
 API_DEBUG = os.getenv('API_DEBUG', 'false').lower() == 'true'
+
+# OLED Display config
+ENABLE_OLED = os.getenv('ENABLE_OLED', 'true').lower() == 'true'
+OLED_I2C_ADDRESS = int(os.getenv('OLED_I2C_ADDRESS', '0x3c'), 16)  # Default I2C address
 # -----------------------------------------
 
 # Global variables for battery monitoring
@@ -38,6 +50,9 @@ last_battery_voltage = 0.0
 battery_status = "unknown"
 low_battery_warnings = 0
 battery_voltage_history = []  # Track voltage changes for charging detection
+
+# OLED Display instance
+oled_display = None
 
 # UART access lock for thread safety
 uart_lock = threading.Lock()
@@ -1691,6 +1706,22 @@ battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
 battery_thread.start()
 print(f"Battery monitoring started (interval: {BATTERY_CHECK_INTERVAL}s, threshold: {LOW_BATTERY_THRESHOLD}V, auto-shutdown: {ENABLE_AUTO_SHUTDOWN})")
 
+# Initialize and start OLED display
+if ENABLE_OLED and OLED_AVAILABLE:
+    try:
+        oled_display = OLEDDisplay(database_path=DB_FILE, i2c_address=OLED_I2C_ADDRESS)
+        if oled_display.start():
+            print(f"OLED Display started (I2C: 0x{OLED_I2C_ADDRESS:02x})")
+        else:
+            print("⚠️ OLED Display failed to start")
+            oled_display = None
+    except Exception as e:
+        print(f"⚠️ OLED Display initialization failed: {e}")
+        oled_display = None
+else:
+    print("OLED Display disabled or not available")
+    oled_display = None
+
 # Display configuration
 print("\n" + "="*50)
 print("SMS CAPTURE SYSTEM CONFIGURATION")
@@ -1705,6 +1736,7 @@ print(f"Battery Warning Threshold: {BATTERY_WARNING_THRESHOLD}V")
 print(f"Battery Shutdown Threshold: {LOW_BATTERY_THRESHOLD}V")
 print(f"Auto Shutdown: {ENABLE_AUTO_SHUTDOWN}")
 print(f"API Server: http://{API_HOST}:{API_PORT}")
+print(f"OLED Display: {'Enabled' if ENABLE_OLED and OLED_AVAILABLE else 'Disabled'} (I2C: 0x{OLED_I2C_ADDRESS:02x})")
 print("="*50)
 
 # --- SIM setup ---
@@ -1795,6 +1827,10 @@ except KeyboardInterrupt:
     print("Exiting...")
 
 finally:
+    # Stop OLED display
+    if oled_display:
+        oled_display.stop()
+    
     pi.bb_serial_read_close(RX_PIN)
     pi.stop()
     
