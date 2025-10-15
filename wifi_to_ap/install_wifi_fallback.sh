@@ -4,7 +4,7 @@
 
 set -e
 
-SCRIPT_DIR="/home/dino/Documents/Shootecc/Coding"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 SERVICE_NAME="wifi-fallback"
 
 # Check if running as root
@@ -36,6 +36,14 @@ if [ -n "$PACKAGES_NEEDED" ]; then
     apt-get update
     apt-get install -y $PACKAGES_NEEDED
 fi
+
+# Ensure hostapd and dnsmasq are stopped and disabled by default
+echo "🔧 Configuring services for normal WiFi operation..."
+systemctl stop hostapd 2>/dev/null || true
+systemctl stop dnsmasq 2>/dev/null || true
+systemctl disable hostapd 2>/dev/null || true
+systemctl disable dnsmasq 2>/dev/null || true
+echo "✅ hostapd and dnsmasq disabled (only used for emergency AP)"
 
 # Copy service file to systemd directory
 echo "📋 Installing systemd service..."

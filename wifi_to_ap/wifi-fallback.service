@@ -5,7 +5,7 @@ Wants=network.target
 
 [Service]
 Type=forking
-ExecStart=/home/dino/Documents/Shootecc/Coding/wifi_to_ad_hoc.sh
+ExecStart=/home/dino/Documents/Shootecc/Coding/wifi_to_ap/wifi_to_ad_hoc.sh
 Restart=no
 User=root
 StandardOutput=journal

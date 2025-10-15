@@ -3,10 +3,19 @@
 ## Overview
 Automatically checks for WiFi connectivity in the first minute after boot. If no connection is found, switches to a lightweight Emergency Access Point mode until reboot.
 
+## ⚠️ Important: Service Management
+This system ensures that **hostapd** and **dnsmasq** services are:
+- **STOPPED** and **DISABLED** during normal WiFi operation
+- **Only started temporarily** when emergency AP mode is needed
+- **Automatically stopped** when WiFi connection is restored
+
+This prevents interference with normal WiFi connectivity.
+
 ## Features
 - **⏱️ Smart Boot Detection**: Checks WiFi for 60 seconds after boot
 - **🔄 Automatic Fallback**: Switches to AP mode if no connection
 - **📡 Lightweight AP**: Minimal resource usage for Pi Zero
+- **🛡️ Safe Service Management**: Ensures AP services don't interfere with normal WiFi
 - **🌐 Simple Web Interface**: Status page accessible at AP IP
 - **🔄 Auto-Recovery**: Returns to normal WiFi on reboot
 - **📝 Detailed Logging**: All events logged to `/var/log/wifi-fallback.log`
@@ -26,6 +35,11 @@ sudo ./install_wifi_fallback.sh
 ### 3. Manual Test (Optional)
 ```bash
 sudo ./wifi_to_ad_hoc.sh
+```
+
+### 4. Ensure AP Services are Disabled (if needed)
+```bash
+sudo ./disable_ap_services.sh
 ```
 
 ## Configuration
@@ -67,23 +81,38 @@ When activated, provides:
 
 ## Service Management
 
-### Check Status
+### WiFi Fallback Service
 ```bash
+# Check status
 sudo systemctl status wifi-fallback
-```
 
-### View Live Logs
-```bash
+# View live logs
 sudo journalctl -u wifi-fallback -f
-```
 
-### Stop Service
-```bash
+# Stop service
 sudo systemctl stop wifi-fallback
+
+# Disable auto-start
+sudo systemctl disable wifi-fallback
 ```
 
-### Disable Auto-Start
+### AP Services (hostapd & dnsmasq)
+**Important**: These services should normally be **DISABLED** to avoid interfering with regular WiFi.
+
 ```bash
+# Check if AP services are properly disabled
+sudo systemctl status hostapd
+sudo systemctl status dnsmasq
+
+# Manually disable AP services (if needed)
+sudo ./disable_ap_services.sh
+
+# Check service auto-start status
+sudo systemctl is-enabled hostapd
+sudo systemctl is-enabled dnsmasq
+```
+
+**Expected Output**: Both should show `disabled` or `inactive`
 sudo systemctl disable wifi-fallback
 ```
 

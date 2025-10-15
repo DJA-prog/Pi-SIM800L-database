@@ -28,6 +28,23 @@ fi
 
 log_message "WiFi fallback script started"
 
+# Function to ensure AP services are stopped during normal operation
+ensure_ap_services_stopped() {
+    log_message "Ensuring hostapd and dnsmasq are stopped for normal WiFi operation..."
+    
+    # Stop and disable automatic startup of AP services
+    systemctl stop hostapd 2>/dev/null || true
+    systemctl stop dnsmasq 2>/dev/null || true
+    systemctl disable hostapd 2>/dev/null || true
+    systemctl disable dnsmasq 2>/dev/null || true
+    
+    # Kill any running emergency instances
+    pkill -f "hostapd.*emergency" 2>/dev/null || true
+    pkill -f "dnsmasq.*emergency" 2>/dev/null || true
+    
+    log_message "AP services stopped - ready for normal WiFi operation"
+}
+
 # Function to check internet connectivity
 check_internet() {
     # Check if we can reach common DNS servers
@@ -53,6 +70,10 @@ check_wifi_connected() {
 # Function to setup lightweight AP mode
 setup_ap_mode() {
     log_message "Setting up lightweight AP mode..."
+    
+    # Ensure AP services are stopped first (clean slate)
+    systemctl stop hostapd 2>/dev/null || true
+    systemctl stop dnsmasq 2>/dev/null || true
     
     # Stop any existing services that might interfere
     systemctl stop wpa_supplicant 2>/dev/null || true
@@ -136,10 +157,14 @@ EOF
 cleanup_ap_mode() {
     log_message "Cleaning up AP mode..."
     
-    # Kill processes
+    # Kill emergency processes (not system services)
     [ -f /tmp/hostapd_emergency.pid ] && kill $(cat /tmp/hostapd_emergency.pid) 2>/dev/null || true
     [ -f /tmp/dnsmasq_emergency.pid ] && kill $(cat /tmp/dnsmasq_emergency.pid) 2>/dev/null || true
     [ -f /tmp/emergency_web.pid ] && kill $(cat /tmp/emergency_web.pid) 2>/dev/null || true
+    
+    # Ensure system services remain stopped
+    systemctl stop hostapd 2>/dev/null || true
+    systemctl stop dnsmasq 2>/dev/null || true
     
     # Remove temp files
     rm -f /tmp/hostapd_emergency.conf /tmp/dnsmasq_emergency.conf
@@ -158,6 +183,9 @@ trap cleanup_ap_mode EXIT
 
 # Main logic
 log_message "Checking WiFi connectivity for $CHECK_TIMEOUT seconds..."
+
+# First, ensure AP services are stopped for normal operation
+ensure_ap_services_stopped
 
 # Wait a moment for WiFi to potentially connect
 sleep 10
@@ -207,6 +235,12 @@ if [ "$wifi_connected" = false ]; then
         exit 1
     fi
 else
-    log_message "WiFi connection successful - exiting normally"
+    log_message "WiFi connection successful - ensuring AP services remain disabled"
+    # Double-check that AP services are stopped and disabled
+    systemctl stop hostapd 2>/dev/null || true
+    systemctl stop dnsmasq 2>/dev/null || true
+    systemctl disable hostapd 2>/dev/null || true
+    systemctl disable dnsmasq 2>/dev/null || true
+    log_message "Normal WiFi operation confirmed - exiting"
     exit 0
 fi

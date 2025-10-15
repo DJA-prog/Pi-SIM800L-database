@@ -4,7 +4,7 @@
 
 set -e
 
-SCRIPT_DIR="/home/dino/Documents/Shootecc/Coding"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
@@ -42,7 +42,28 @@ else
     echo "✅ All required commands available"
 fi
 
-# Test 3: Check WiFi interface
+# Test 3: Check AP services are properly disabled
+echo "🛡️ Checking AP services status..."
+HOSTAPD_STATUS=$(systemctl is-active hostapd 2>/dev/null || echo "inactive")
+DNSMASQ_STATUS=$(systemctl is-active dnsmasq 2>/dev/null || echo "inactive")
+HOSTAPD_ENABLED=$(systemctl is-enabled hostapd 2>/dev/null || echo "disabled")
+DNSMASQ_ENABLED=$(systemctl is-enabled dnsmasq 2>/dev/null || echo "disabled")
+
+if [ "$HOSTAPD_STATUS" = "inactive" ] && [ "$DNSMASQ_STATUS" = "inactive" ]; then
+    echo "✅ AP services are stopped (hostapd: $HOSTAPD_STATUS, dnsmasq: $DNSMASQ_STATUS)"
+else
+    echo "⚠️  AP services running (hostapd: $HOSTAPD_STATUS, dnsmasq: $DNSMASQ_STATUS)"
+    echo "   Run: sudo ./disable_ap_services.sh"
+fi
+
+if [ "$HOSTAPD_ENABLED" = "disabled" ] && [ "$DNSMASQ_ENABLED" = "disabled" ]; then
+    echo "✅ AP services auto-start disabled (good for normal WiFi operation)"
+else
+    echo "⚠️  AP services auto-start enabled (hostapd: $HOSTAPD_ENABLED, dnsmasq: $DNSMASQ_ENABLED)"
+    echo "   Run: sudo ./disable_ap_services.sh"
+fi
+
+# Test 4: Check WiFi interface
 echo "📡 Checking WiFi interface..."
 if ip link show wlan0 >/dev/null 2>&1; then
     echo "✅ WiFi interface wlan0 found"
@@ -67,7 +88,7 @@ else
     exit 1
 fi
 
-# Test 4: Check internet connectivity
+# Test 5: Check internet connectivity
 echo "🌐 Checking current internet connectivity..."
 if ping -c 1 -W 5 8.8.8.8 >/dev/null 2>&1; then
     echo "✅ Internet connectivity available"
@@ -77,7 +98,7 @@ else
     echo "   (Script would activate AP mode in this case)"
 fi
 
-# Test 5: Dry run configuration check
+# Test 6: Dry run configuration check
 echo "⚙️ Checking AP configuration..."
 HOSTNAME=$(hostname | tail -c 5)
 echo "   Emergency SSID would be: RPI-Emergency-$HOSTNAME"
