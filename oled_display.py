@@ -53,24 +53,17 @@ class OLEDDisplay:
             return "No IP"
     
     def get_battery_percent(self):
-        """Get battery percentage via API call"""
-        try:
-            import requests
-            response = requests.get("http://localhost:5000/battery_status", timeout=2)
-            if response.status_code == 200:
-                data = response.json()
-                if 'battery' in data and 'percentage' in data['battery']:
-                    return int(data['battery']['percentage'])
-            return 0
-        except Exception:
-            return 0
+        """Get battery percentage - now updated directly by server's battery monitoring"""
+        # Battery percentage is now updated directly by the server's battery monitoring thread
+        # This method is kept for compatibility but returns the cached value
+        return self.battery_percent
     
     def get_message_count(self):
         """Get total message count from database"""
         try:
             conn = sqlite3.connect(self.database_path, timeout=1.0)
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM sms_messages")
+            cursor.execute("SELECT COUNT(*) FROM sms")
             count = cursor.fetchone()[0]
             conn.close()
             return count
@@ -80,8 +73,16 @@ class OLEDDisplay:
     def update_data(self):
         """Update display data"""
         self.wifi_ip = self.get_wifi_ip()
-        self.battery_percent = self.get_battery_percent()
+        # Battery percentage is updated directly by server's battery monitoring thread
+        # self.battery_percent = self.get_battery_percent()  # No longer needed
         self.message_count = self.get_message_count()
+        
+        # Debug output (only print if values change significantly)
+        if hasattr(self, '_last_debug_battery') and abs(self.battery_percent - self._last_debug_battery) > 5:
+            print(f"[OLED] Battery updated: {self.battery_percent}%")
+        if not hasattr(self, '_last_debug_battery'):
+            print(f"[OLED] Initial data: IP={self.wifi_ip}, Battery={self.battery_percent}%, SMS={self.message_count}")
+        self._last_debug_battery = self.battery_percent
     
     def draw_display(self):
         """Draw content on OLED display"""
@@ -90,7 +91,6 @@ class OLEDDisplay:
         
         try:
             with canvas(self.device) as draw:
-                # Line 1: WiFi IP (truncated if needed)
                 ip_text = self.wifi_ip
                 if len(ip_text) > 15:
                     ip_text = ip_text[:12] + "..."
@@ -116,6 +116,16 @@ class OLEDDisplay:
                 draw.text((0, 22), datetime.now().strftime("%H:%M"), fill="white")
         except Exception as e:
             print(f"Startup display error: {e}")
+    
+    def force_update(self):
+        """Force an immediate display update (called when new SMS arrives)"""
+        if self.running:
+            try:
+                self.update_data()
+                self.draw_display()
+                print(f"[OLED] Force update: IP={self.wifi_ip}, Battery={self.battery_percent}%, SMS={self.message_count}")
+            except Exception as e:
+                print(f"Force update error: {e}")
     
     def update_loop(self):
         """Main update loop for display"""

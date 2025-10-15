@@ -16,7 +16,7 @@ try:
     from oled_display import OLEDDisplay
     OLED_AVAILABLE = True
 except ImportError:
-    print("⚠️ OLED display module not available - install requirements: pip install luma.oled pillow")
+    print("⚠️ OLED display module not available - install requirements: pip install luma.oled")
     OLED_AVAILABLE = False
 
 # Load environment variables from .env.server file
@@ -596,6 +596,37 @@ def get_system_logs():
         return jsonify({
             'status': 'error',
             'message': 'Could not retrieve system logs',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/system/oled-status', methods=['GET'])
+def get_oled_status():
+    """Get OLED display status and current data"""
+    try:
+        oled_status = {
+            'enabled': ENABLE_OLED,
+            'available': OLED_AVAILABLE,
+            'running': oled_display is not None and oled_display.is_available() if oled_display else False,
+            'i2c_address': f"0x{OLED_I2C_ADDRESS:02x}",
+            'current_data': {}
+        }
+        
+        # If OLED is running, get current display data
+        if oled_status['running']:
+            oled_status['current_data'] = {
+                'wifi_ip': oled_display.wifi_ip,
+                'battery_percent': oled_display.battery_percent,
+                'message_count': oled_display.message_count
+            }
+        
+        return jsonify({
+            'status': 'success',
+            'data': oled_status
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Could not retrieve OLED status',
             'error': str(e)
         }), 500
 
@@ -1625,6 +1656,17 @@ def check_battery_and_shutdown():
     charge_level = battery_info['charge_level']
     print(f"[Battery] Voltage: {voltage:.3f}V, Level: {charge_level}%")
     
+    # Update OLED display with fresh battery data (if available)
+    if oled_display and oled_display.is_available():
+        try:
+            # Update the OLED's cached battery percentage directly
+            oled_display.battery_percent = charge_level
+            # Optionally force a display update for immediate visual feedback
+            # (Comment out the next line if you want to keep the 10-second update cycle)
+            oled_display.force_update()
+        except Exception as e:
+            print(f"[Battery] OLED update error: {e}")
+    
     # Check for low battery warning
     if voltage <= BATTERY_WARNING_THRESHOLD and voltage > LOW_BATTERY_THRESHOLD:
         low_battery_warnings += 1
@@ -1820,6 +1862,10 @@ try:
                         "INSERT INTO sms (sender, timestamp, text) VALUES (?, ?, ?)",
                         (sender, timestamp, body)
                     )
+                    
+                    # Update OLED display immediately when new SMS arrives
+                    if oled_display and oled_display.is_available():
+                        oled_display.force_update()
 
         time.sleep(0.1)
 
