@@ -99,15 +99,17 @@ def db_execute(query, params=()):
             return result
 
 def log_system_message(message):
-    """Log a system message to both SMS and system_messages tables"""
+    """Log a system message to the dedicated system_messages table only.
+
+    Previously system messages were also written into the `sms` table
+    (as sender = 'SYSTEM') for backward compatibility. That behaviour
+    caused system logs to appear in SMS endpoints. To keep system
+    messages separate from user SMS, we now only insert into
+    `system_messages`.
+    """
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        # Log to SMS table for backward compatibility
-        db_execute(
-            "INSERT INTO sms (sender, timestamp, text) VALUES (?, ?, ?)",
-            ("SYSTEM", timestamp, message)
-        )
-        # Log to dedicated system messages table
+        # Insert only into the dedicated system_messages table
         db_execute(
             "INSERT INTO system_messages (timestamp, message) VALUES (?, ?)",
             (timestamp, message)
@@ -434,10 +436,12 @@ def get_battery_debug():
 
 @app.route('/api/battery/history', methods=['GET'])
 def get_battery_history():
-    """Get battery-related system messages from SMS log"""
+    """Get battery-related entries from the system_messages table"""
     try:
+        # Search the dedicated system_messages table for battery-related text
         result = db_execute(
-            "SELECT * FROM sms WHERE sender = 'SYSTEM' AND text LIKE '%battery%' OR text LIKE '%Battery%' ORDER BY timestamp DESC LIMIT 50"
+            "SELECT * FROM system_messages WHERE message LIKE ? OR message LIKE ? ORDER BY timestamp DESC LIMIT 50",
+            ("%battery%", "%Battery%")
         )
         return jsonify({
             'status': 'success',
@@ -1751,9 +1755,26 @@ print(f"Battery monitoring started (interval: {BATTERY_CHECK_INTERVAL}s, thresho
 # Initialize and start OLED display
 if ENABLE_OLED and OLED_AVAILABLE:
     try:
+        # Check battery percentage before initializing OLED display
+        print("[OLED Init] Checking battery before display initialization...")
+        initial_battery_info = get_battery_voltage()
+        if initial_battery_info:
+            print(f"[OLED Init] Initial battery: {initial_battery_info['voltage']:.3f}V ({initial_battery_info['charge_level']}%)")
+        else:
+            print("[OLED Init] ⚠️ Could not read initial battery status")
+        
         oled_display = OLEDDisplay(database_path=DB_FILE, i2c_address=OLED_I2C_ADDRESS)
         if oled_display.start():
             print(f"OLED Display started (I2C: 0x{OLED_I2C_ADDRESS:02x})")
+            
+            # Update OLED with initial battery data if available
+            if initial_battery_info:
+                try:
+                    oled_display.battery_percent = initial_battery_info['charge_level']
+                    oled_display.force_update()
+                    print(f"[OLED Init] Display updated with initial battery: {initial_battery_info['charge_level']}%")
+                except Exception as e:
+                    print(f"[OLED Init] ⚠️ Failed to update display with initial battery data: {e}")
         else:
             print("⚠️ OLED Display failed to start")
             oled_display = None
