@@ -1,0 +1,75 @@
+### API Health Check
+GET http://192.168.188.176:24963/api/health
+
+###
+
+### Get Configuration
+GET http://192.168.188.176:24963/api/config
+
+###
+
+### Get All SMS (should be fast)
+GET http://192.168.188.176:24963/api/sms
+
+###
+
+### Get Statistics (should be fast)
+GET http://192.168.188.176:24963/api/stats
+
+###
+
+### Get Battery Status (this one might be slow)
+GET http://192.168.188.176:24963/api/battery
+
+###
+
+### Get Battery Debug Info
+GET http://192.168.188.176:24963/api/battery/debug
+
+###
+
+### Get SMS Reports Config
+GET http://192.168.188.176:24963/api/sms-reports/config
+
+###
+
+### Preview Status Report
+GET http://192.168.188.176:24963/api/sms-reports/preview
+
+###
+
+### Get SIM Status
+GET http://192.168.188.176:24963/api/sim/status
+
+###
+
+### Get Signal Strength
+GET http://192.168.188.176:24963/api/sim/signal
+
+###
+
+### Get Network Operator
+GET http://192.168.188.176:24963/api/sim/operator
+
+###
+
+### Test SMS Reports Update (POST)
+POST http://192.168.188.176:24963/api/sms-reports/config
+Content-Type: application/json
+
+{
+    "enabled": true,
+    "recipient": "+1234567890",
+    "interval_hours": 168
+}
+
+###
+
+### Test SMS Send (POST)
+POST http://192.168.188.176:24963/api/sms-reports/test-sms
+Content-Type: application/json
+
+{
+    "recipient": "+1234567890",
+    "message": "Test message from REST client"
+}

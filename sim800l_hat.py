@@ -43,6 +43,12 @@ API_DEBUG = os.getenv('API_DEBUG', 'false').lower() == 'true'
 # OLED Display config
 ENABLE_OLED = os.getenv('ENABLE_OLED', 'true').lower() == 'true'
 OLED_I2C_ADDRESS = int(os.getenv('OLED_I2C_ADDRESS', '0x3c'), 16)  # Default I2C address
+
+# SMS Report config
+ENABLE_SMS_REPORTS = os.getenv('ENABLE_SMS_REPORTS', 'true').lower() == 'true'
+SMS_REPORT_RECIPIENT = os.getenv('SMS_REPORT_RECIPIENT', '')  # Phone number for reports
+SMS_REPORT_INTERVAL = int(os.getenv('SMS_REPORT_INTERVAL', 604800))  # Weekly reports (7 days)
+SMS_REPORT_LAST_SENT = float(os.getenv('SMS_REPORT_LAST_SENT', 0))  # Last report timestamp
 # -----------------------------------------
 
 # Global variables for battery monitoring
@@ -310,6 +316,14 @@ def get_config():
             },
             'sim': {
                 'pin_configured': bool(SIM_PIN)  # Don't expose actual PIN
+            },
+            'sms_reports': {
+                'enabled': ENABLE_SMS_REPORTS,
+                'recipient': SMS_REPORT_RECIPIENT,
+                'interval': SMS_REPORT_INTERVAL,
+                'interval_hours': SMS_REPORT_INTERVAL / 3600,
+                'last_sent': SMS_REPORT_LAST_SENT,
+                'last_sent_formatted': datetime.datetime.fromtimestamp(SMS_REPORT_LAST_SENT).strftime("%Y-%m-%d %H:%M:%S") if SMS_REPORT_LAST_SENT > 0 else "Never"
             }
         }
         
@@ -1323,6 +1337,227 @@ def get_data_stats():
             'error': str(e)
         }), 500
 
+@app.route('/api/sms-reports/config', methods=['GET'])
+def get_sms_report_config():
+    """Get SMS report configuration"""
+    try:
+        # Calculate time until next report
+        next_report_time = None
+        time_until_next = None
+        
+        if ENABLE_SMS_REPORTS and SMS_REPORT_RECIPIENT:
+            next_report_timestamp = SMS_REPORT_LAST_SENT + SMS_REPORT_INTERVAL
+            next_report_time = datetime.datetime.fromtimestamp(next_report_timestamp).strftime("%Y-%m-%d %H:%M:%S")
+            time_until_next = max(0, next_report_timestamp - time.time())
+        
+        config = {
+            'enabled': ENABLE_SMS_REPORTS,
+            'recipient': SMS_REPORT_RECIPIENT,
+            'interval': SMS_REPORT_INTERVAL,
+            'interval_hours': SMS_REPORT_INTERVAL / 3600,
+            'interval_days': SMS_REPORT_INTERVAL / 86400,
+            'last_sent': SMS_REPORT_LAST_SENT,
+            'last_sent_formatted': datetime.datetime.fromtimestamp(SMS_REPORT_LAST_SENT).strftime("%Y-%m-%d %H:%M:%S") if SMS_REPORT_LAST_SENT > 0 else "Never",
+            'next_report_time': next_report_time,
+            'seconds_until_next': time_until_next
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'data': config
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to get SMS report configuration',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sms-reports/config', methods=['POST'])
+def update_sms_report_config():
+    """Update SMS report configuration"""
+    global ENABLE_SMS_REPORTS, SMS_REPORT_RECIPIENT, SMS_REPORT_INTERVAL
+    
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No JSON data provided'
+            }), 400
+        
+        updated_fields = []
+        
+        # Update enabled status
+        if 'enabled' in data:
+            enabled = bool(data['enabled'])
+            if enabled != ENABLE_SMS_REPORTS:
+                ENABLE_SMS_REPORTS = enabled
+                update_env_file('ENABLE_SMS_REPORTS', 'true' if enabled else 'false')
+                updated_fields.append(f"enabled: {enabled}")
+        
+        # Update recipient
+        if 'recipient' in data:
+            recipient = str(data['recipient']).strip()
+            if recipient != SMS_REPORT_RECIPIENT:
+                SMS_REPORT_RECIPIENT = recipient
+                update_env_file('SMS_REPORT_RECIPIENT', recipient)
+                updated_fields.append(f"recipient: {recipient}")
+        
+        # Update interval (accept hours or seconds)
+        if 'interval_hours' in data:
+            hours = float(data['interval_hours'])
+            if hours < 0.25:  # Minimum 15 minutes
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Interval must be at least 0.25 hours (15 minutes)'
+                }), 400
+            interval = int(hours * 3600)
+            if interval != SMS_REPORT_INTERVAL:
+                SMS_REPORT_INTERVAL = interval
+                update_env_file('SMS_REPORT_INTERVAL', str(interval))
+                updated_fields.append(f"interval: {hours}h")
+        elif 'interval' in data:
+            interval = int(data['interval'])
+            if interval < 900:  # Minimum 15 minutes
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Interval must be at least 900 seconds (15 minutes)'
+                }), 400
+            if interval != SMS_REPORT_INTERVAL:
+                SMS_REPORT_INTERVAL = interval
+                update_env_file('SMS_REPORT_INTERVAL', str(interval))
+                updated_fields.append(f"interval: {interval}s")
+        
+        if updated_fields:
+            log_system_message(f"SMS report config updated: {', '.join(updated_fields)}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Configuration updated: {", ".join(updated_fields)}' if updated_fields else 'No changes made',
+            'updated_fields': updated_fields
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to update SMS report configuration',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sms-reports/send-now', methods=['POST'])
+def send_report_now():
+    """Send a status report immediately"""
+    try:
+        data = request.get_json()
+        custom_recipient = None
+        
+        if data and 'recipient' in data:
+            custom_recipient = str(data['recipient']).strip()
+        
+        recipient = custom_recipient or SMS_REPORT_RECIPIENT
+        
+        if not recipient:
+            return jsonify({
+                'status': 'error',
+                'message': 'No recipient specified. Set recipient in request body or configure default recipient.'
+            }), 400
+        
+        # Generate and send report
+        report = generate_status_report()
+        
+        if send_sms(recipient, report):
+            # Update last sent time if using default recipient
+            if not custom_recipient:
+                global SMS_REPORT_LAST_SENT
+                SMS_REPORT_LAST_SENT = time.time()
+                update_env_file('SMS_REPORT_LAST_SENT', str(int(SMS_REPORT_LAST_SENT)))
+            
+            log_system_message(f"Manual status report sent to {recipient}")
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Status report sent to {recipient}',
+                'recipient': recipient,
+                'report_preview': report[:100] + "..." if len(report) > 100 else report
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': f'Failed to send report to {recipient}'
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to send status report',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sms-reports/test-sms', methods=['POST'])
+def test_sms_send():
+    """Send a test SMS message"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No JSON data provided'
+            }), 400
+        
+        recipient = data.get('recipient')
+        message = data.get('message', 'Test message from SIM800L system')
+        
+        if not recipient:
+            return jsonify({
+                'status': 'error',
+                'message': 'Recipient phone number is required'
+            }), 400
+        
+        if send_sms(recipient, message):
+            log_system_message(f"Test SMS sent to {recipient}")
+            return jsonify({
+                'status': 'success',
+                'message': f'Test SMS sent to {recipient}',
+                'recipient': recipient,
+                'sent_message': message
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': f'Failed to send test SMS to {recipient}'
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to send test SMS',
+            'error': str(e)
+        }), 500
+
+@app.route('/api/sms-reports/preview', methods=['GET'])
+def preview_status_report():
+    """Preview the status report without sending"""
+    try:
+        report = generate_status_report()
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'report': report,
+                'length': len(report),
+                'estimated_sms_count': (len(report) + 159) // 160  # SMS are 160 chars max
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to generate report preview',
+            'error': str(e)
+        }), 500
+
 def start_api_server():
     """Start the Flask API server in a separate thread"""
     print(f"Starting API server on {API_HOST}:{API_PORT}")
@@ -1713,6 +1948,210 @@ def battery_monitor_thread():
             print(f"[Battery] Monitor error: {e}")
             time.sleep(10)  # Shorter retry interval on error
 
+def send_sms(phone_number, message):
+    """Send SMS message using SIM800L"""
+    if not phone_number or not message:
+        return False
+    
+    try:
+        with uart_lock:
+            print(f"[SMS] Sending message to {phone_number}")
+            
+            # Set text mode
+            resp = send_at("AT+CMGF=1", delay=1)
+            if "OK" not in resp:
+                print(f"[SMS] Failed to set text mode: {resp}")
+                return False
+            
+            # Prepare to send SMS
+            resp = send_at(f'AT+CMGS="{phone_number}"', delay=2)
+            if ">" not in resp:
+                print(f"[SMS] Failed to initiate SMS: {resp}")
+                return False
+            
+            # Send message content and Ctrl+Z to terminate
+            uart_send(message + "\x1A")  # \x1A is Ctrl+Z
+            time.sleep(5)  # Wait for send completion
+            
+            # Read response
+            response = ""
+            timeout = time.time() + 10
+            while time.time() < timeout:
+                data = uart_read()
+                if data:
+                    response += data
+                    if "OK" in response or "ERROR" in response:
+                        break
+                time.sleep(0.1)
+            
+            print(f"[SMS] Send response: {response}")
+            
+            if "OK" in response:
+                log_system_message(f"SMS sent to {phone_number}: {message[:50]}...")
+                return True
+            else:
+                log_system_message(f"SMS send failed to {phone_number}: {response}")
+                return False
+                
+    except Exception as e:
+        print(f"[SMS] Send error: {e}")
+        log_system_message(f"SMS send error to {phone_number}: {str(e)}")
+        return False
+
+def get_disk_usage():
+    """Get disk usage information"""
+    try:
+        result = subprocess.run(['df', '-h', '/'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            lines = result.stdout.strip().split('\n')
+            if len(lines) >= 2:
+                parts = lines[1].split()
+                if len(parts) >= 5:
+                    return {
+                        'total': parts[1],
+                        'used': parts[2],
+                        'available': parts[3],
+                        'usage_percent': parts[4]
+                    }
+        return None
+    except Exception as e:
+        print(f"[Disk] Error getting disk usage: {e}")
+        return None
+
+def generate_status_report():
+    """Generate comprehensive status report"""
+    try:
+        # Get current timestamp
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Get SMS statistics
+        total_sms = db_execute("SELECT COUNT(*) FROM sms WHERE sender != 'SYSTEM'")[0][0]
+        unique_senders = db_execute("SELECT COUNT(DISTINCT sender) FROM sms WHERE sender != 'SYSTEM'")[0][0]
+        
+        # Get system message count
+        system_messages = db_execute("SELECT COUNT(*) FROM system_messages")[0][0]
+        
+        # Get battery info
+        battery_info = get_battery_voltage()
+        battery_text = "Unknown"
+        if battery_info:
+            battery_text = f"{battery_info['voltage']:.2f}V ({battery_info['charge_level']}%)"
+        
+        # Get disk usage
+        disk_info = get_disk_usage()
+        disk_text = "Unknown"
+        if disk_info:
+            disk_text = f"{disk_info['used']}/{disk_info['total']} ({disk_info['usage_percent']} used)"
+        
+        # Get signal strength
+        signal_info = get_signal_strength()
+        signal_text = "Unknown"
+        if signal_info:
+            signal_text = f"{signal_info['signal_quality']} ({signal_info['rssi']})"
+        
+        # Generate report message
+        report = f"""SIM800L System Report
+{timestamp}
+
+SMS Stats:
+- Total: {total_sms}
+- Senders: {unique_senders}
+
+System:
+- Battery: {battery_text}
+- Disk: {disk_text}
+- Signal: {signal_text}
+- Sys Messages: {system_messages}
+
+System operational."""
+        
+        return report
+        
+    except Exception as e:
+        print(f"[Report] Error generating report: {e}")
+        return f"SIM800L Report Error: {str(e)} at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+def update_env_file(key, value):
+    """Update environment variable in .env.server file"""
+    try:
+        env_file = '.env.server'
+        if not os.path.exists(env_file):
+            return False
+        
+        # Read current file
+        with open(env_file, 'r') as f:
+            lines = f.readlines()
+        
+        # Update or add the key
+        updated = False
+        for i, line in enumerate(lines):
+            if line.strip().startswith(f"{key}="):
+                lines[i] = f"{key}={value}\n"
+                updated = True
+                break
+        
+        if not updated:
+            lines.append(f"{key}={value}\n")
+        
+        # Write updated file
+        with open(env_file, 'w') as f:
+            f.writelines(lines)
+        
+        return True
+        
+    except Exception as e:
+        print(f"[Env] Error updating environment file: {e}")
+        return False
+
+def check_and_send_report():
+    """Check if it's time to send a report and send it"""
+    global SMS_REPORT_LAST_SENT
+    
+    if not ENABLE_SMS_REPORTS or not SMS_REPORT_RECIPIENT:
+        return
+    
+    current_time = time.time()
+    
+    # Check if it's time for a new report
+    if current_time - SMS_REPORT_LAST_SENT >= SMS_REPORT_INTERVAL:
+        print("[Report] Generating and sending status report...")
+        
+        try:
+            # Generate report
+            report = generate_status_report()
+            
+            # Send report
+            if send_sms(SMS_REPORT_RECIPIENT, report):
+                # Update last sent timestamp
+                SMS_REPORT_LAST_SENT = current_time
+                update_env_file('SMS_REPORT_LAST_SENT', str(int(current_time)))
+                
+                log_system_message(f"Status report sent to {SMS_REPORT_RECIPIENT}")
+                print(f"[Report] Report sent successfully to {SMS_REPORT_RECIPIENT}")
+            else:
+                log_system_message("Failed to send status report")
+                print("[Report] Failed to send report")
+                
+        except Exception as e:
+            print(f"[Report] Error in report sending: {e}")
+            log_system_message(f"Report error: {str(e)}")
+
+def sms_report_thread():
+    """Background thread to handle SMS reporting"""
+    print(f"[Report] Starting SMS report monitor (interval: {SMS_REPORT_INTERVAL//3600:.1f}h, recipient: {SMS_REPORT_RECIPIENT or 'None'})")
+    
+    # Check every hour (or every 10 minutes if interval is less than 1 hour)
+    check_interval = min(3600, SMS_REPORT_INTERVAL // 6) if SMS_REPORT_INTERVAL > 600 else 600
+    
+    while True:
+        try:
+            if ENABLE_SMS_REPORTS and SMS_REPORT_RECIPIENT:
+                check_and_send_report()
+            time.sleep(check_interval)
+        except Exception as e:
+            print(f"[Report] Thread error: {e}")
+            time.sleep(600)  # Wait 10 minutes on error
+
 # --- Init DB ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -1751,6 +2190,14 @@ print(f"API server started on http://{API_HOST}:{API_PORT}")
 battery_thread = threading.Thread(target=battery_monitor_thread, daemon=True)
 battery_thread.start()
 print(f"Battery monitoring started (interval: {BATTERY_CHECK_INTERVAL}s, threshold: {LOW_BATTERY_THRESHOLD}V, auto-shutdown: {ENABLE_AUTO_SHUTDOWN})")
+
+# Start SMS report monitoring thread
+if ENABLE_SMS_REPORTS:
+    sms_report_monitoring_thread = threading.Thread(target=sms_report_thread, daemon=True)
+    sms_report_monitoring_thread.start()
+    print(f"SMS reporting started (interval: {SMS_REPORT_INTERVAL//3600:.1f}h, recipient: {SMS_REPORT_RECIPIENT or 'Not set'})")
+else:
+    print("SMS reporting disabled")
 
 # Initialize and start OLED display
 if ENABLE_OLED and OLED_AVAILABLE:
@@ -1800,6 +2247,7 @@ print(f"Battery Shutdown Threshold: {LOW_BATTERY_THRESHOLD}V")
 print(f"Auto Shutdown: {ENABLE_AUTO_SHUTDOWN}")
 print(f"API Server: http://{API_HOST}:{API_PORT}")
 print(f"OLED Display: {'Enabled' if ENABLE_OLED and OLED_AVAILABLE else 'Disabled'} (I2C: 0x{OLED_I2C_ADDRESS:02x})")
+print(f"SMS Reports: {'Enabled' if ENABLE_SMS_REPORTS else 'Disabled'} (Interval: {SMS_REPORT_INTERVAL//3600:.1f}h, Recipient: {SMS_REPORT_RECIPIENT or 'Not set'})")
 print("="*50)
 
 # --- SIM setup ---

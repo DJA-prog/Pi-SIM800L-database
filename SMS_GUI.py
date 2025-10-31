@@ -20,18 +20,19 @@ class APIWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
     
-    def __init__(self, url, method='GET', data=None):
+    def __init__(self, url, method='GET', data=None, timeout=10):
         super().__init__()
         self.url = url
         self.method = method
         self.data = data
+        self.timeout = timeout
     
     def run(self):
         try:
             if self.method == 'GET':
-                response = requests.get(self.url, timeout=10)
+                response = requests.get(self.url, timeout=self.timeout)
             elif self.method == 'POST':
-                response = requests.post(self.url, json=self.data, timeout=10)
+                response = requests.post(self.url, json=self.data, timeout=self.timeout)
             
             if response.status_code == 200:
                 self.finished.emit(response.json())
@@ -47,8 +48,39 @@ class SMSGUIApp(QMainWindow):
         super().__init__()
         self.current_data = []
         self.env_file = ".env"
+        self.active_threads = []  # Track active threads
         self.load_settings()
         self.init_ui()
+    
+    def closeEvent(self, event):
+        """Handle application close event"""
+        # Wait for all active threads to finish
+        self.cleanup_threads()
+        event.accept()
+    
+    def cleanup_threads(self):
+        """Clean up active threads before closing"""
+        for thread in self.active_threads[:]:  # Create a copy to iterate
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(3000)  # Wait up to 3 seconds
+            self.active_threads.remove(thread)
+    
+    def create_api_worker(self, url, method='GET', data=None, timeout=10):
+        """Create and manage API worker thread"""
+        worker = APIWorker(url, method, data, timeout)
+        self.active_threads.append(worker)
+        
+        # Clean up thread when it finishes
+        worker.finished.connect(lambda: self.remove_thread(worker))
+        worker.error.connect(lambda: self.remove_thread(worker))
+        
+        return worker
+    
+    def remove_thread(self, thread):
+        """Remove thread from active threads list"""
+        if thread in self.active_threads:
+            self.active_threads.remove(thread)
     
     def load_settings(self):
         """Load settings from .env file"""
@@ -111,6 +143,9 @@ class SMSGUIApp(QMainWindow):
         
         # Add keyboard shortcuts
         self.setup_shortcuts()
+        
+        # Initialize API connection
+        self.update_connection(check_health=False)
         
         # Try to load initial data (don't fail if API is offline)
         # This will be handled gracefully by the API error handling
@@ -183,6 +218,9 @@ class SMSGUIApp(QMainWindow):
         
         # Data Management
         self.create_data_management_group(layout)
+        
+        # SMS Reports
+        self.create_sms_reports_group(layout)
         
         # System Control
         self.create_system_group(layout)
@@ -590,6 +628,110 @@ class SMSGUIApp(QMainWindow):
         
         layout.addWidget(group)
     
+    def create_sms_reports_group(self, layout):
+        """Create SMS reports group"""
+        group = QGroupBox("SMS Reports")
+        group.setStyleSheet("QGroupBox { font-weight: bold; color: #4CAF50; }")
+        group_layout = QVBoxLayout(group)
+        
+        # Status display
+        self.sms_reports_status = QLabel("Status: Loading...")
+        self.sms_reports_status.setStyleSheet("font-size: 10px; color: gray;")
+        self.sms_reports_status.setWordWrap(True)
+        group_layout.addWidget(self.sms_reports_status)
+        
+        # Configuration section
+        config_frame = QFrame()
+        config_layout = QVBoxLayout(config_frame)
+        config_layout.setSpacing(3)
+        
+        # Enable/Disable checkbox
+        self.reports_enabled_cb = QPushButton("Enable Reports")
+        self.reports_enabled_cb.setCheckable(True)
+        self.reports_enabled_cb.setStyleSheet("""
+            QPushButton {
+                background-color: #E0E0E0;
+                border: 1px solid #BDBDBD;
+                padding: 5px;
+                text-align: center;
+            }
+            QPushButton:checked {
+                background-color: #4CAF50;
+                color: white;
+            }
+        """)
+        self.reports_enabled_cb.clicked.connect(self.toggle_reports_enabled)
+        config_layout.addWidget(self.reports_enabled_cb)
+        
+        # Recipient input
+        recipient_layout = QHBoxLayout()
+        recipient_layout.addWidget(QLabel("Recipient:"))
+        self.recipient_input = QLineEdit()
+        self.recipient_input.setPlaceholderText("+1234567890")
+        self.recipient_input.setToolTip("Phone number with country code")
+        recipient_layout.addWidget(self.recipient_input)
+        config_layout.addLayout(recipient_layout)
+        
+        # Interval input
+        interval_layout = QHBoxLayout()
+        interval_layout.addWidget(QLabel("Interval (hours):"))
+        self.interval_input = QLineEdit()
+        self.interval_input.setPlaceholderText("168")
+        self.interval_input.setToolTip("Report interval in hours (168 = 1 week)")
+        interval_layout.addWidget(self.interval_input)
+        config_layout.addLayout(interval_layout)
+        
+        # Update configuration button
+        update_config_btn = QPushButton("Update Configuration")
+        update_config_btn.setToolTip("Save SMS reports configuration")
+        update_config_btn.clicked.connect(self.update_sms_reports_config)
+        update_config_btn.setStyleSheet("QPushButton { background-color: #2196F3; color: white; }")
+        config_layout.addWidget(update_config_btn)
+        
+        group_layout.addWidget(config_frame)
+        
+        # Actions section
+        actions_frame = QFrame()
+        actions_layout = QVBoxLayout(actions_frame)
+        actions_layout.setSpacing(3)
+        
+        # Action buttons row 1
+        actions_row1 = QHBoxLayout()
+        preview_btn = QPushButton("Preview Report")
+        preview_btn.setToolTip("Preview the status report content")
+        preview_btn.clicked.connect(self.preview_status_report)
+        preview_btn.setStyleSheet("QPushButton { background-color: #607D8B; color: white; }")
+        actions_row1.addWidget(preview_btn)
+        
+        send_now_btn = QPushButton("Send Now")
+        send_now_btn.setToolTip("Send status report immediately")
+        send_now_btn.clicked.connect(self.send_report_now)
+        send_now_btn.setStyleSheet("QPushButton { background-color: #FF9800; color: white; }")
+        actions_row1.addWidget(send_now_btn)
+        actions_layout.addLayout(actions_row1)
+        
+        # Action buttons row 2
+        actions_row2 = QHBoxLayout()
+        test_sms_btn = QPushButton("Test SMS")
+        test_sms_btn.setToolTip("Send a test SMS message")
+        test_sms_btn.clicked.connect(self.test_sms_send)
+        test_sms_btn.setStyleSheet("QPushButton { background-color: #9C27B0; color: white; }")
+        actions_row2.addWidget(test_sms_btn)
+        
+        get_config_btn = QPushButton("Refresh Config")
+        get_config_btn.setToolTip("Reload SMS reports configuration")
+        get_config_btn.clicked.connect(self.get_sms_reports_config)
+        get_config_btn.setStyleSheet("QPushButton { background-color: #009688; color: white; }")
+        actions_row2.addWidget(get_config_btn)
+        actions_layout.addLayout(actions_row2)
+        
+        group_layout.addWidget(actions_frame)
+        
+        # Load initial configuration
+        self.get_sms_reports_config()
+        
+        layout.addWidget(group)
+    
     def create_system_group(self, layout):
         """Create system control group"""
         group = QGroupBox("System Control")
@@ -714,7 +856,7 @@ class SMSGUIApp(QMainWindow):
         self.show_loading(True)
         url = f"{self.api_base_url}/{endpoint}"
         
-        self.api_worker = APIWorker(url, method, data)
+        self.api_worker = self.create_api_worker(url, method, data)
         self.api_worker.finished.connect(self.on_api_success)
         self.api_worker.error.connect(self.on_api_error)
         self.api_worker.start()
@@ -777,9 +919,24 @@ class SMSGUIApp(QMainWindow):
                 self.display_error(response.get('message', 'Unknown error'))
     
     def on_api_error(self, error_msg):
-        """Handle API error"""
+        """Handle API error with enhanced timeout messaging"""
         self.show_loading(False)
-        self.display_error(error_msg)
+        
+        # Provide more helpful messages for timeout errors
+        if "Read timed out" in error_msg or "timeout" in error_msg.lower():
+            if "battery" in error_msg or "sim" in error_msg or "sms-reports" in error_msg:
+                enhanced_msg = (
+                    f"Operation timed out: {error_msg}\n\n"
+                    "This is normal for battery/SIM operations as they require communication with the SIM800L module. "
+                    "The module may be busy or the operation may take longer than expected. "
+                    "Please try again in a moment."
+                )
+            else:
+                enhanced_msg = f"Request timed out: {error_msg}\n\nThe server may be busy. Please try again."
+        else:
+            enhanced_msg = error_msg
+            
+        self.display_error(enhanced_msg)
     
     def display_results(self, data):
         """Display results in the table"""
@@ -1058,8 +1215,24 @@ class SMSGUIApp(QMainWindow):
                 writer.writerow(flattened_item)
     
     def get_battery_status(self):
-        """Get battery status from API"""
-        self.make_api_request("battery")
+        """Get battery status from API (with extended timeout for SIM800L communication)"""
+        self.statusBar().showMessage("Getting battery status (may take 30+ seconds for SIM800L communication)...")
+        self.make_api_request_with_timeout("battery", timeout=30)
+    
+    def make_api_request_with_timeout(self, endpoint, method='GET', data=None, timeout=30):
+        """Make API request with custom timeout for slow operations"""
+        # Check if API URL is set
+        if not hasattr(self, 'api_base_url'):
+            self.display_error("API connection not configured. Please set host and port.")
+            return
+            
+        self.show_loading(True)
+        url = f"{self.api_base_url}/{endpoint}"
+        
+        self.api_worker = self.create_api_worker(url, method, data, timeout)
+        self.api_worker.finished.connect(self.on_api_success)
+        self.api_worker.error.connect(self.on_api_error)
+        self.api_worker.start()
     
     def toggle_battery_timer(self):
         """Toggle auto-refresh timer for battery status"""
@@ -1207,20 +1380,23 @@ class SMSGUIApp(QMainWindow):
                 self.make_api_request("system/logs")
     
     def get_sim_status(self):
-        """Get comprehensive SIM status"""
-        self.make_api_request("sim/status")
+        """Get comprehensive SIM status (with extended timeout for SIM800L communication)"""
+        self.statusBar().showMessage("Getting SIM status (may take 30+ seconds for SIM800L communication)...")
+        self.make_api_request_with_timeout("sim/status", timeout=30)
     
     def get_signal_strength(self):
-        """Get signal strength information"""
-        self.make_api_request("sim/signal")
+        """Get signal strength information (with extended timeout for SIM800L communication)"""
+        self.statusBar().showMessage("Getting signal strength (may take 25+ seconds for SIM800L communication)...")
+        self.make_api_request_with_timeout("sim/signal", timeout=25)
     
     def get_network_operator(self):
-        """Get network operator information"""
-        self.make_api_request("sim/operator")
+        """Get network operator information (with extended timeout for SIM800L communication)"""
+        self.statusBar().showMessage("Getting network operator (may take 25+ seconds for SIM800L communication)...")
+        self.make_api_request_with_timeout("sim/operator", timeout=25)
     
     def get_battery_history(self):
-        """Get battery voltage history"""
-        self.make_api_request("battery/voltage-history")
+        """Get battery voltage history (with extended timeout for SIM800L communication)"""
+        self.make_api_request_with_timeout("battery/voltage-history", timeout=25)
     
     def get_data_stats(self):
         """Get detailed data statistics"""
@@ -1540,6 +1716,256 @@ class SMSGUIApp(QMainWindow):
                 "font-size: 11px; padding: 5px; background-color: #f5f5f5; "
                 "border: 1px solid red; border-radius: 3px; color: red;"
             )
+    
+    # SMS Reports Methods
+    def get_sms_reports_config(self):
+        """Get SMS reports configuration"""
+        try:
+            # Check if API URL is set
+            if not hasattr(self, 'api_base_url'):
+                self.sms_reports_status.setText("Status: API not connected")
+                self.sms_reports_status.setStyleSheet("font-size: 10px; color: red;")
+                return
+                
+            url = f"{self.api_base_url}/sms-reports/config"
+            worker = self.create_api_worker(url, 'GET', timeout=20)
+            worker.finished.connect(self.on_sms_reports_config_received)
+            worker.error.connect(self.display_error)
+            worker.start()
+            self.statusBar().showMessage("Loading SMS reports configuration (may take 20+ seconds)...")
+        except Exception as e:
+            self.display_error(f"Failed to get SMS reports config: {str(e)}")
+    
+    def on_sms_reports_config_received(self, response):
+        """Handle SMS reports configuration response"""
+        try:
+            if response.get('status') == 'success':
+                config = response.get('data', {})
+                
+                # Update UI elements
+                self.reports_enabled_cb.setChecked(config.get('enabled', False))
+                self.reports_enabled_cb.setText("Disable Reports" if config.get('enabled', False) else "Enable Reports")
+                
+                self.recipient_input.setText(config.get('recipient', ''))
+                self.interval_input.setText(str(config.get('interval_hours', 168)))
+                
+                # Update status display
+                status_text = f"Status: {'Enabled' if config.get('enabled') else 'Disabled'}"
+                if config.get('recipient'):
+                    status_text += f"\nRecipient: {config.get('recipient')}"
+                status_text += f"\nInterval: {config.get('interval_hours', 0):.1f}h"
+                
+                if config.get('last_sent_formatted') != "Never":
+                    status_text += f"\nLast sent: {config.get('last_sent_formatted')}"
+                
+                if config.get('next_report_time'):
+                    status_text += f"\nNext report: {config.get('next_report_time')}"
+                
+                self.sms_reports_status.setText(status_text)
+                self.sms_reports_status.setStyleSheet("font-size: 10px; color: green;")
+                
+                self.statusBar().showMessage("SMS reports configuration loaded", 3000)
+            else:
+                self.display_error(f"Failed to load config: {response.get('message', 'Unknown error')}")
+        except Exception as e:
+            self.display_error(f"Error processing SMS reports config: {str(e)}")
+    
+    def toggle_reports_enabled(self):
+        """Toggle reports enabled status"""
+        enabled = self.reports_enabled_cb.isChecked()
+        self.reports_enabled_cb.setText("Disable Reports" if enabled else "Enable Reports")
+        
+        # Update configuration immediately
+        self.update_sms_reports_config()
+    
+    def update_sms_reports_config(self):
+        """Update SMS reports configuration"""
+        try:
+            recipient = self.recipient_input.text().strip()
+            interval_text = self.interval_input.text().strip()
+            enabled = self.reports_enabled_cb.isChecked()
+            
+            # Validate inputs
+            if enabled and not recipient:
+                QMessageBox.warning(self, "Validation Error", "Please enter a recipient phone number")
+                return
+            
+            if not interval_text:
+                interval_hours = 168  # Default 1 week
+            else:
+                try:
+                    interval_hours = float(interval_text)
+                    if interval_hours < 0.25:
+                        QMessageBox.warning(self, "Validation Error", "Interval must be at least 0.25 hours (15 minutes)")
+                        return
+                except ValueError:
+                    QMessageBox.warning(self, "Validation Error", "Please enter a valid number for interval")
+                    return
+            
+            data = {
+                'enabled': enabled,
+                'recipient': recipient,
+                'interval_hours': interval_hours
+            }
+            
+            url = f"{self.api_base_url}/sms-reports/config"
+            worker = self.create_api_worker(url, 'POST', data, timeout=20)
+            worker.finished.connect(self.on_sms_reports_config_updated)
+            worker.error.connect(self.display_error)
+            worker.start()
+            self.statusBar().showMessage("Updating SMS reports configuration...")
+            
+        except Exception as e:
+            self.display_error(f"Failed to update SMS reports config: {str(e)}")
+    
+    def on_sms_reports_config_updated(self, response):
+        """Handle SMS reports configuration update response"""
+        try:
+            if response.get('status') == 'success':
+                QMessageBox.information(self, "Success", "SMS reports configuration updated successfully!")
+                self.get_sms_reports_config()  # Refresh the display
+                self.statusBar().showMessage("SMS reports configuration updated", 3000)
+            else:
+                self.display_error(f"Failed to update config: {response.get('message', 'Unknown error')}")
+        except Exception as e:
+            self.display_error(f"Error processing config update: {str(e)}")
+    
+    def preview_status_report(self):
+        """Preview the status report content"""
+        try:
+            url = f"{self.api_base_url}/sms-reports/preview"
+            worker = self.create_api_worker(url, 'GET', timeout=30)
+            worker.finished.connect(self.on_report_preview_received)
+            worker.error.connect(self.display_error)
+            worker.start()
+            self.statusBar().showMessage("Generating report preview (may take 30+ seconds for SIM800L communication)...")
+        except Exception as e:
+            self.display_error(f"Failed to preview report: {str(e)}")
+    
+    def on_report_preview_received(self, response):
+        """Handle report preview response"""
+        try:
+            if response.get('status') == 'success':
+                data = response.get('data', {})
+                report = data.get('report', 'No report content')
+                length = data.get('length', 0)
+                sms_count = data.get('estimated_sms_count', 1)
+                
+                # Show preview in a message box
+                QMessageBox.information(
+                    self, 
+                    f"Status Report Preview ({length} chars, ~{sms_count} SMS)",
+                    report
+                )
+                self.statusBar().showMessage("Report preview generated", 3000)
+            else:
+                self.display_error(f"Failed to generate preview: {response.get('message', 'Unknown error')}")
+        except Exception as e:
+            self.display_error(f"Error processing report preview: {str(e)}")
+    
+    def send_report_now(self):
+        """Send status report immediately"""
+        try:
+            recipient = self.recipient_input.text().strip()
+            
+            # Ask for confirmation
+            reply = QMessageBox.question(
+                self,
+                "Send Report Now",
+                f"Send status report now to:\n{recipient or 'default recipient'}?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            data = {}
+            if recipient:
+                data['recipient'] = recipient
+            
+            url = f"{self.api_base_url}/sms-reports/send-now"
+            worker = self.create_api_worker(url, 'POST', data, timeout=60)
+            worker.finished.connect(self.on_report_sent)
+            worker.error.connect(self.display_error)
+            worker.start()
+            self.statusBar().showMessage("Sending status report (may take 60+ seconds for SMS transmission)...")
+            
+        except Exception as e:
+            self.display_error(f"Failed to send report: {str(e)}")
+    
+    def on_report_sent(self, response):
+        """Handle report sent response"""
+        try:
+            if response.get('status') == 'success':
+                recipient = response.get('recipient', 'unknown')
+                QMessageBox.information(self, "Success", f"Status report sent to {recipient}!")
+                self.get_sms_reports_config()  # Refresh to update last sent time
+                self.statusBar().showMessage("Status report sent successfully", 5000)
+            else:
+                self.display_error(f"Failed to send report: {response.get('message', 'Unknown error')}")
+        except Exception as e:
+            self.display_error(f"Error processing report send: {str(e)}")
+    
+    def test_sms_send(self):
+        """Send a test SMS"""
+        try:
+            from PyQt5.QtWidgets import QInputDialog
+            
+            # Get recipient (default to current recipient)
+            default_recipient = self.recipient_input.text().strip()
+            recipient, ok = QInputDialog.getText(
+                self,
+                "Test SMS",
+                "Enter recipient phone number:",
+                text=default_recipient
+            )
+            
+            if not ok or not recipient.strip():
+                return
+            
+            # Get test message
+            message, ok = QInputDialog.getText(
+                self,
+                "Test SMS",
+                "Enter test message:",
+                text="Test message from SIM800L system"
+            )
+            
+            if not ok:
+                return
+            
+            data = {
+                'recipient': recipient.strip(),
+                'message': message or "Test message from SIM800L system"
+            }
+            
+            url = f"{self.api_base_url}/sms-reports/test-sms"
+            worker = self.create_api_worker(url, 'POST', data, timeout=60)
+            worker.finished.connect(self.on_test_sms_sent)
+            worker.error.connect(self.display_error)
+            worker.start()
+            self.statusBar().showMessage("Sending test SMS...")
+            
+        except Exception as e:
+            self.display_error(f"Failed to send test SMS: {str(e)}")
+    
+    def on_test_sms_sent(self, response):
+        """Handle test SMS sent response"""
+        try:
+            if response.get('status') == 'success':
+                recipient = response.get('recipient', 'unknown')
+                message = response.get('sent_message', 'test message')
+                QMessageBox.information(
+                    self, 
+                    "Success", 
+                    f"Test SMS sent to {recipient}!\n\nMessage: {message}"
+                )
+                self.statusBar().showMessage("Test SMS sent successfully", 5000)
+            else:
+                self.display_error(f"Failed to send test SMS: {response.get('message', 'Unknown error')}")
+        except Exception as e:
+            self.display_error(f"Error processing test SMS: {str(e)}")
 
 def main():
     app = QApplication(sys.argv)

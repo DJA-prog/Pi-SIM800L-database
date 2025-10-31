@@ -1,6 +1,6 @@
 # SMS Database API Tests
 # Base URL for the API
-@baseUrl = http://piHome02:5000/api
+@baseUrl = http://piHome02:24963/api
 
 ### Health Check
 GET {{baseUrl}}/health
