@@ -1,0 +1,245 @@
+### SIM800L SMS Manager API with Database - REST Client Tests
+### Base URL
+@baseUrl = http://localhost:8000
+
+### ==============================================
+### Basic API Tests
+### ==============================================
+
+### 1. Get API home page
+GET {{baseUrl}}/
+
+### 2. Get SMS Manager status (includes battery and signal info)
+GET {{baseUrl}}/status
+
+### 3. Send SMS message
+POST {{baseUrl}}/send
+Content-Type: application/json
+
+{
+  "phone_number": "+1234567890",
+  "message": "Test SMS from API with database!"
+}
+
+### 4. Get received messages (from queue)
+GET {{baseUrl}}/messages
+
+### 5. Start SMS listening
+POST {{baseUrl}}/start-listening
+
+### 6. Stop SMS listening
+POST {{baseUrl}}/stop-listening
+
+### ==============================================
+### Database SMS Operations
+### ==============================================
+
+### 7. Get all SMS messages from database
+GET {{baseUrl}}/db/sms
+
+### 8. Get SMS messages with date range filter
+GET {{baseUrl}}/db/sms?start_date=2024-01-01T00:00:00&end_date=2024-12-31T23:59:59&limit=50
+
+### 9. Get SMS messages by sender filter
+GET {{baseUrl}}/db/sms?sender=+1234567890&limit=20
+
+### 10. Get SMS messages with keyword search
+GET {{baseUrl}}/db/sms?keyword=test&limit=30
+
+### 11. Get SMS messages with combined filters
+GET {{baseUrl}}/db/sms?start_date=2024-11-01T00:00:00&sender=+123&keyword=hello&limit=10
+
+### 12. Get recent SMS messages (last 24 hours)
+GET {{baseUrl}}/db/sms?start_date={{$datetime iso8601 -1 d}}&limit=100
+
+### ==============================================
+### Database System Messages
+### ==============================================
+
+### 13. Get all system messages
+GET {{baseUrl}}/db/system
+
+### 14. Get system messages with date filter
+GET {{baseUrl}}/db/system?start_date={{$datetime iso8601 -1 d}}&limit=50
+
+### 15. Get system messages with keyword search
+GET {{baseUrl}}/db/system?keyword=error&limit=20
+
+### 16. Get system messages for specific component
+GET {{baseUrl}}/db/system?keyword=SMSManager&limit=30
+
+### ==============================================
+### Database Statistics
+### ==============================================
+
+### 17. Get database statistics
+GET {{baseUrl}}/db/stats
+
+### ==============================================
+### Message Deletion Tests
+### ==============================================
+
+### 18. Delete single SMS message (replace 1 with actual message ID)
+DELETE {{baseUrl}}/db/sms/1
+
+### 19. Delete multiple SMS messages in bulk
+DELETE {{baseUrl}}/db/sms/bulk
+Content-Type: application/json
+
+{
+  "message_ids": [1, 2, 3]
+}
+
+### 20. Delete single system message (replace 1 with actual message ID)
+DELETE {{baseUrl}}/db/system/1
+
+### 21. Delete multiple system messages in bulk
+DELETE {{baseUrl}}/db/system/bulk
+Content-Type: application/json
+
+{
+  "message_ids": [1, 2, 3]
+}
+
+### ==============================================
+### Advanced Filter Examples
+### ==============================================
+
+### 22. Search SMS by partial phone number
+GET {{baseUrl}}/db/sms?sender=123&limit=20
+
+### 23. Search SMS by message content
+GET {{baseUrl}}/db/sms?keyword=urgent&limit=15
+
+### 24. Get SMS from specific date
+GET {{baseUrl}}/db/sms?start_date=2024-11-15T00:00:00&end_date=2024-11-15T23:59:59
+
+### 25. Get system errors only
+GET {{baseUrl}}/db/system?keyword=ERROR&limit=50
+
+### 26. Get system warnings and errors
+GET {{baseUrl}}/db/system?keyword=WARNING ERROR&limit=100
+
+### ==============================================
+### Performance Tests
+### ==============================================
+
+### 27. Get limited SMS messages for performance
+GET {{baseUrl}}/db/sms?limit=5
+
+### 28. Get system messages with small limit
+GET {{baseUrl}}/db/system?limit=10
+
+### ==============================================
+### Error Handling Tests
+### ==============================================
+
+### 29. Try to send SMS with invalid phone number
+POST {{baseUrl}}/send
+Content-Type: application/json
+
+{
+  "phone_number": "invalid",
+  "message": "This should fail"
+}
+
+### 30. Try to delete non-existent SMS message
+DELETE {{baseUrl}}/db/sms/99999
+
+### 31. Try to delete non-existent system message
+DELETE {{baseUrl}}/db/system/99999
+
+### 32. Bulk delete with empty array
+DELETE {{baseUrl}}/db/sms/bulk
+Content-Type: application/json
+
+{
+  "message_ids": []
+}
+
+### ==============================================
+### Special Characters and Unicode Tests
+### ==============================================
+
+### 33. Send SMS with special characters
+POST {{baseUrl}}/send
+Content-Type: application/json
+
+{
+  "phone_number": "+1234567890",
+  "message": "Test with émojis 🚀📱💾 and spëcial chars: @#$%^&*()"
+}
+
+### 34. Search SMS with special characters in keyword
+GET {{baseUrl}}/db/sms?keyword=émojis&limit=10
+
+### 35. Search system messages with special keywords
+GET {{baseUrl}}/db/system?keyword=initialization&limit=20
+
+### ==============================================
+### Hardware Status Tests
+### ==============================================
+
+### 36. Monitor battery voltage (check status multiple times)
+GET {{baseUrl}}/status
+
+### 37. Check signal strength
+GET {{baseUrl}}/status
+
+### ==============================================
+### Load Testing Simulation
+### ==============================================
+
+### 38. Send multiple test messages
+POST {{baseUrl}}/send
+Content-Type: application/json
+
+{
+  "phone_number": "+1234567890",
+  "message": "Load test message 1"
+}
+
+### 39. Send another test message
+POST {{baseUrl}}/send
+Content-Type: application/json
+
+{
+  "phone_number": "+1234567890",
+  "message": "Load test message 2"
+}
+
+### 40. Check database after load test
+GET {{baseUrl}}/db/stats
+
+### ==============================================
+### Date Range Testing
+### ==============================================
+
+### 41. Get messages from yesterday
+GET {{baseUrl}}/db/sms?start_date={{$datetime iso8601 -1 d}}&end_date={{$datetime iso8601}}
+
+### 42. Get messages from last week
+GET {{baseUrl}}/db/sms?start_date={{$datetime iso8601 -7 d}}&end_date={{$datetime iso8601}}
+
+### 43. Get system messages from today only
+GET {{baseUrl}}/db/system?start_date={{$datetime iso8601 0 d}}&end_date={{$datetime iso8601}}
+
+### ==============================================
+### Combined Filter Testing
+### ==============================================
+
+### 44. Complex SMS filter (date + sender + keyword)
+GET {{baseUrl}}/db/sms?start_date=2024-01-01T00:00:00&sender=+1234567890&keyword=test&limit=25
+
+### 45. Complex system message filter
+GET {{baseUrl}}/db/system?start_date={{$datetime iso8601 -1 d}}&keyword=SMSManager&limit=15
+
+### ==============================================
+### Final Status Check
+### ==============================================
+
+### 46. Final status and statistics check
+GET {{baseUrl}}/status
+
+### 47. Final database statistics
+GET {{baseUrl}}/db/stats
