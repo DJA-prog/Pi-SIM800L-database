@@ -1,2 +1,13 @@
+# SMS Manager API Requirements
+fastapi==0.104.1
 flask>=2.0.0
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# GUI Requirements
+PyQt5>=5.15.0
+requests>=2.25.0
+python-dotenv>=0.19.0
+
+# SIM800L
 pigpio>=1.78

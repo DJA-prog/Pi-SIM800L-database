@@ -2,3 +2,4 @@
 .env.server
 venv
 __pycache__
+logs/*
