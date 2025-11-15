@@ -1,0 +1,297 @@
+2025-10-31 22:17:22,253 - INFO - setup_logging:41 - ================================================================================
+2025-10-31 22:17:22,253 - INFO - setup_logging:42 - SMS GUI APPLICATION STARTED
+2025-10-31 22:17:22,253 - INFO - setup_logging:43 - Log file: logs/sms_gui_20251031_221722.log
+2025-10-31 22:17:22,253 - INFO - setup_logging:44 - Python version: 3.11.2 (main, Apr 28 2025, 14:11:48) [GCC 12.2.0]
+2025-10-31 22:17:22,253 - INFO - setup_logging:45 - Working directory: /run/media/private/dino/Shootecc_enc/Coding
+2025-10-31 22:17:22,253 - INFO - setup_logging:46 - ================================================================================
+2025-10-31 22:17:22,253 - INFO - main:2171 - Starting SMS GUI application
+2025-10-31 22:17:22,273 - DEBUG - main:2174 - Qt Application created - version: 
+2025-10-31 22:17:22,273 - INFO - main:2179 - Application properties set
+2025-10-31 22:17:22,273 - DEBUG - main:2182 - Creating main window
+2025-10-31 22:17:22,274 - INFO - __init__:120 - Initializing SMSGUIApp
+2025-10-31 22:17:22,276 - DEBUG - __init__:126 - Loading application settings
+2025-10-31 22:17:22,276 - INFO - load_settings:166 - Loading settings from .env file
+2025-10-31 22:17:22,276 - DEBUG - load_settings:169 - Found .env file: .env
+2025-10-31 22:17:22,279 - INFO - load_settings:178 - Settings loaded - Host: 192.168.1.65, Port: 24963
+2025-10-31 22:17:22,280 - DEBUG - __init__:129 - Initializing user interface
+2025-10-31 22:17:22,321 - INFO - update_connection:394 - Updating connection settings
+2025-10-31 22:17:22,321 - DEBUG - update_connection:399 - Connection input - Host: '192.168.1.65', Port: '24963'
+2025-10-31 22:17:22,321 - INFO - update_connection:419 - API base URL updated: http://192.168.1.65:24963/api
+2025-10-31 22:17:22,321 - INFO - update_connection:433 - Connection update complete: 192.168.1.65:24963
+2025-10-31 22:17:22,322 - INFO - check_api_health:1157 - Checking API health
+2025-10-31 22:17:22,322 - DEBUG - check_api_health:1167 - Health check URL: http://192.168.1.65:24963/api/health
+2025-10-31 22:17:22,324 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:17:22,591 - DEBUG - _make_request:544 - http://192.168.1.65:24963 "GET /api/health HTTP/1.1" 200 103
+2025-10-31 22:17:22,592 - INFO - check_api_health:1170 - Health check response: 200
+2025-10-31 22:17:22,593 - INFO - check_api_health:1176 - API health check successful - connected to 192.168.1.65:24963
+2025-10-31 22:17:22,594 - DEBUG - check_api_health:1181 - Loading SMS reports configuration after successful connection
+2025-10-31 22:17:22,594 - DEBUG - __init__:63 - APIWorker created: GET http://192.168.1.65:24963/api/sms-reports/config, timeout=20s, data=None
+2025-10-31 22:17:22,595 - INFO - run:66 - APIWorker starting request: GET http://192.168.1.65:24963/api/sms-reports/config
+2025-10-31 22:17:22,595 - DEBUG - run:67 - Request details - Timeout: 20s, Data: None
+2025-10-31 22:17:22,595 - DEBUG - run:73 - Making GET request to http://192.168.1.65:24963/api/sms-reports/config
+2025-10-31 22:17:22,597 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:17:22,663 - INFO - update_connection:394 - Updating connection settings
+2025-10-31 22:17:22,663 - DEBUG - update_connection:399 - Connection input - Host: '192.168.1.65', Port: '24963'
+2025-10-31 22:17:22,663 - INFO - update_connection:419 - API base URL updated: http://192.168.1.65:24963/api
+2025-10-31 22:17:22,663 - INFO - update_connection:433 - Connection update complete: 192.168.1.65:24963
+2025-10-31 22:17:22,663 - INFO - __init__:132 - SMSGUIApp initialization complete
+2025-10-31 22:17:22,663 - DEBUG - main:2185 - Showing main window
+2025-10-31 22:17:22,753 - INFO - main:2188 - Entering Qt event loop
+2025-10-31 22:17:22,753 - DEBUG - _make_request:544 - http://192.168.1.65:24963 "GET /api/sms-reports/config HTTP/1.1" 200 244
+2025-10-31 22:17:22,754 - INFO - run:82 - API Response received in 0.16s - Status: 200
+2025-10-31 22:17:22,754 - DEBUG - run:83 - Response headers: {'Content-Type': 'application/json', 'Content-Length': '244', 'Server': 'Werkzeug/1.0.1 Python/3.9.2', 'Date': 'Fri, 31 Oct 2025 20:17:22 GMT'}
+2025-10-31 22:17:22,754 - INFO - run:88 - Response data type: <class 'dict'>
+2025-10-31 22:17:22,755 - DEBUG - run:89 - Response content: {
+  "data": {
+    "enabled": true,
+    "interval": 604800,
+    "interval_days": 7.0,
+    "interval_hours": 168.0,
+    "last_sent": 0.0,
+    "last_sent_formatted": "Never",
+    "next_report_time": "1970-01-08 02:00:00",
+    "recipient": "+264816828893",
+    "seconds_until_next": 0
+  },
+  "status": "success"
+}
+2025-10-31 22:18:04,346 - INFO - get_all_sms:1200 - Button pressed: Get All SMS
+2025-10-31 22:18:04,347 - INFO - make_api_request:951 - Making API request: GET /sms
+2025-10-31 22:18:04,349 - DEBUG - make_api_request:952 - Request data: None
+2025-10-31 22:18:04,378 - DEBUG - make_api_request:963 - Full request URL: http://192.168.1.65:24963/api/sms
+2025-10-31 22:18:04,379 - DEBUG - __init__:63 - APIWorker created: GET http://192.168.1.65:24963/api/sms, timeout=10s, data=None
+2025-10-31 22:18:04,379 - DEBUG - make_api_request:969 - API worker thread started
+2025-10-31 22:18:04,380 - INFO - run:66 - APIWorker starting request: GET http://192.168.1.65:24963/api/sms
+2025-10-31 22:18:04,382 - DEBUG - run:67 - Request details - Timeout: 10s, Data: None
+2025-10-31 22:18:04,385 - DEBUG - run:73 - Making GET request to http://192.168.1.65:24963/api/sms
+2025-10-31 22:18:04,388 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:18:04,499 - DEBUG - _make_request:544 - http://192.168.1.65:24963 "GET /api/sms HTTP/1.1" 200 41
+2025-10-31 22:18:04,500 - INFO - run:82 - API Response received in 0.11s - Status: 200
+2025-10-31 22:18:04,500 - DEBUG - run:83 - Response headers: {'Content-Type': 'application/json', 'Content-Length': '41', 'Server': 'Werkzeug/1.0.1 Python/3.9.2', 'Date': 'Fri, 31 Oct 2025 20:18:04 GMT'}
+2025-10-31 22:18:04,500 - INFO - run:88 - Response data type: <class 'dict'>
+2025-10-31 22:18:04,500 - DEBUG - run:89 - Response content: {
+  "count": 0,
+  "data": [],
+  "status": "success"
+}
+2025-10-31 22:18:04,501 - INFO - on_api_success:973 - API request completed successfully
+2025-10-31 22:18:04,501 - DEBUG - on_api_success:974 - Response received: <class 'dict'> - {'count': 0, 'data': [], 'status': 'success'}
+2025-10-31 22:18:04,501 - INFO - on_api_success:979 - Response status: success
+2025-10-31 22:18:04,501 - DEBUG - on_api_success:982 - Response data type: <class 'list'>, length: 0
+2025-10-31 22:18:04,501 - DEBUG - on_api_success:987 - Processing response for URL: http://192.168.1.65:24963/api/sms
+2025-10-31 22:18:04,501 - DEBUG - on_api_success:1007 - Processing generic response data
+2025-10-31 22:18:04,503 - INFO - on_api_success:1024 - Empty result set received
+2025-10-31 22:18:36,133 - INFO - get_battery_status:1377 - Button pressed: Get Battery Status
+2025-10-31 22:18:36,133 - INFO - make_api_request_with_timeout:1383 - Making API request with timeout: GET /battery (timeout=30s)
+2025-10-31 22:18:36,134 - DEBUG - make_api_request_with_timeout:1384 - Request data: None
+2025-10-31 22:18:36,134 - DEBUG - make_api_request_with_timeout:1395 - Full request URL: http://192.168.1.65:24963/api/battery
+2025-10-31 22:18:36,135 - DEBUG - __init__:63 - APIWorker created: GET http://192.168.1.65:24963/api/battery, timeout=30s, data=None
+2025-10-31 22:18:36,136 - DEBUG - make_api_request_with_timeout:1401 - API worker thread started with 30s timeout
+2025-10-31 22:18:36,136 - INFO - run:66 - APIWorker starting request: GET http://192.168.1.65:24963/api/battery
+2025-10-31 22:18:36,136 - DEBUG - run:67 - Request details - Timeout: 30s, Data: None
+2025-10-31 22:18:36,136 - DEBUG - run:73 - Making GET request to http://192.168.1.65:24963/api/battery
+2025-10-31 22:18:36,138 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:19:06,235 - ERROR - run:102 - API timeout: Request timeout after 30s: HTTPConnectionPool(host='192.168.1.65', port=24963): Read timed out. (read timeout=30)
+2025-10-31 22:19:06,235 - ERROR - on_api_error:1049 - API request failed: Connection timeout: HTTPConnectionPool(host='192.168.1.65', port=24963): Read timed out. (read timeout=30)
+2025-10-31 22:19:06,236 - WARNING - on_api_error:1064 - General request timeout
+2025-10-31 22:19:06,236 - ERROR - display_error:1151 - Displaying error to user: Request timed out: Connection timeout: HTTPConnectionPool(host='192.168.1.65', port=24963): Read timed out. (read timeout=30)
+
+The server may be busy. Please try again.
+2025-10-31 22:19:20,035 - INFO - get_sim_status:1568 - Button pressed: Get SIM Status
+2025-10-31 22:19:20,035 - INFO - make_api_request_with_timeout:1383 - Making API request with timeout: GET /sim/status (timeout=30s)
+2025-10-31 22:19:20,035 - DEBUG - make_api_request_with_timeout:1384 - Request data: None
+2025-10-31 22:19:20,036 - DEBUG - make_api_request_with_timeout:1395 - Full request URL: http://192.168.1.65:24963/api/sim/status
+2025-10-31 22:19:20,036 - DEBUG - __init__:63 - APIWorker created: GET http://192.168.1.65:24963/api/sim/status, timeout=30s, data=None
+2025-10-31 22:19:20,037 - DEBUG - make_api_request_with_timeout:1401 - API worker thread started with 30s timeout
+2025-10-31 22:19:20,037 - INFO - run:66 - APIWorker starting request: GET http://192.168.1.65:24963/api/sim/status
+2025-10-31 22:19:20,038 - DEBUG - run:67 - Request details - Timeout: 30s, Data: None
+2025-10-31 22:19:20,038 - DEBUG - run:73 - Making GET request to http://192.168.1.65:24963/api/sim/status
+2025-10-31 22:19:20,039 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:19:50,272 - ERROR - run:102 - API timeout: Request timeout after 30s: HTTPConnectionPool(host='192.168.1.65', port=24963): Read timed out. (read timeout=30)
+2025-10-31 22:19:50,272 - ERROR - on_api_error:1049 - API request failed: Connection timeout: HTTPConnectionPool(host='192.168.1.65', port=24963): Read timed out. (read timeout=30)
+2025-10-31 22:19:50,273 - WARNING - on_api_error:1064 - General request timeout
+2025-10-31 22:19:50,273 - ERROR - display_error:1151 - Displaying error to user: Request timed out: Connection timeout: HTTPConnectionPool(host='192.168.1.65', port=24963): Read timed out. (read timeout=30)
+
+The server may be busy. Please try again.
+2025-10-31 22:19:54,492 - DEBUG - __init__:63 - APIWorker created: POST http://192.168.1.65:24963/api/sms-reports/config, timeout=20s, data={'enabled': True, 'recipient': '+264816828893', 'interval_hours': 168.0}
+2025-10-31 22:19:54,493 - INFO - run:66 - APIWorker starting request: POST http://192.168.1.65:24963/api/sms-reports/config
+2025-10-31 22:19:54,493 - DEBUG - run:67 - Request details - Timeout: 20s, Data: {'enabled': True, 'recipient': '+264816828893', 'interval_hours': 168.0}
+2025-10-31 22:19:54,494 - DEBUG - run:76 - Making POST request to http://192.168.1.65:24963/api/sms-reports/config with data: {'enabled': True, 'recipient': '+264816828893', 'interval_hours': 168.0}
+2025-10-31 22:19:54,495 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:19:54,690 - DEBUG - _make_request:544 - http://192.168.1.65:24963 "POST /api/sms-reports/config HTTP/1.1" 200 69
+2025-10-31 22:19:54,691 - INFO - run:82 - API Response received in 0.20s - Status: 200
+2025-10-31 22:19:54,691 - DEBUG - run:83 - Response headers: {'Content-Type': 'application/json', 'Content-Length': '69', 'Server': 'Werkzeug/1.0.1 Python/3.9.2', 'Date': 'Fri, 31 Oct 2025 20:19:54 GMT'}
+2025-10-31 22:19:54,691 - INFO - run:88 - Response data type: <class 'dict'>
+2025-10-31 22:19:54,692 - DEBUG - run:89 - Response content: {
+  "message": "No changes made",
+  "status": "success",
+  "updated_fields": []
+}
+2025-10-31 22:20:05,040 - DEBUG - __init__:63 - APIWorker created: GET http://192.168.1.65:24963/api/sms-reports/config, timeout=20s, data=None
+2025-10-31 22:20:05,042 - INFO - run:66 - APIWorker starting request: GET http://192.168.1.65:24963/api/sms-reports/config
+2025-10-31 22:20:05,044 - DEBUG - run:67 - Request details - Timeout: 20s, Data: None
+2025-10-31 22:20:05,044 - DEBUG - run:73 - Making GET request to http://192.168.1.65:24963/api/sms-reports/config
+2025-10-31 22:20:05,046 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:20:05,122 - DEBUG - _make_request:544 - http://192.168.1.65:24963 "GET /api/sms-reports/config HTTP/1.1" 200 244
+2025-10-31 22:20:05,124 - INFO - run:82 - API Response received in 0.08s - Status: 200
+2025-10-31 22:20:05,125 - DEBUG - run:83 - Response headers: {'Content-Type': 'application/json', 'Content-Length': '244', 'Server': 'Werkzeug/1.0.1 Python/3.9.2', 'Date': 'Fri, 31 Oct 2025 20:20:05 GMT'}
+2025-10-31 22:20:05,127 - INFO - run:88 - Response data type: <class 'dict'>
+2025-10-31 22:20:05,127 - DEBUG - run:89 - Response content: {
+  "data": {
+    "enabled": true,
+    "interval": 604800,
+    "interval_days": 7.0,
+    "interval_hours": 168.0,
+    "last_sent": 0.0,
+    "last_sent_formatted": "Never",
+    "next_report_time": "1970-01-08 02:00:00",
+    "recipient": "+264816828893",
+    "seconds_until_next": 0
+  },
+  "status": "success"
+}
+2025-10-31 22:20:17,443 - DEBUG - __init__:63 - APIWorker created: GET http://192.168.1.65:24963/api/sms-reports/preview, timeout=30s, data=None
+2025-10-31 22:20:17,445 - INFO - run:66 - APIWorker starting request: GET http://192.168.1.65:24963/api/sms-reports/preview
+2025-10-31 22:20:17,445 - DEBUG - run:67 - Request details - Timeout: 30s, Data: None
+2025-10-31 22:20:17,445 - DEBUG - run:73 - Making GET request to http://192.168.1.65:24963/api/sms-reports/preview
+2025-10-31 22:20:17,446 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:20:43,284 - INFO - make_api_request:951 - Making API request: GET /system/messages
+2025-10-31 22:20:43,284 - DEBUG - make_api_request:952 - Request data: None
+2025-10-31 22:20:43,286 - DEBUG - make_api_request:963 - Full request URL: http://192.168.1.65:24963/api/system/messages
+2025-10-31 22:20:43,286 - DEBUG - __init__:63 - APIWorker created: GET http://192.168.1.65:24963/api/system/messages, timeout=10s, data=None
+2025-10-31 22:20:43,287 - DEBUG - make_api_request:969 - API worker thread started
+2025-10-31 22:20:43,287 - INFO - run:66 - APIWorker starting request: GET http://192.168.1.65:24963/api/system/messages
+2025-10-31 22:20:43,288 - DEBUG - run:67 - Request details - Timeout: 10s, Data: None
+2025-10-31 22:20:43,288 - DEBUG - run:73 - Making GET request to http://192.168.1.65:24963/api/system/messages
+2025-10-31 22:20:43,289 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:20:43,464 - DEBUG - _make_request:544 - http://192.168.1.65:24963 "GET /api/system/messages HTTP/1.1" 200 1149
+2025-10-31 22:20:43,465 - INFO - run:82 - API Response received in 0.18s - Status: 200
+2025-10-31 22:20:43,465 - DEBUG - run:83 - Response headers: {'Content-Type': 'application/json', 'Content-Length': '1149', 'Server': 'Werkzeug/1.0.1 Python/3.9.2', 'Date': 'Fri, 31 Oct 2025 20:20:43 GMT'}
+2025-10-31 22:20:43,465 - INFO - run:88 - Response data type: <class 'dict'>
+2025-10-31 22:20:43,465 - DEBUG - run:89 - Response content: {
+  "count": 16,
+  "data": [
+    [
+      19,
+      "2025-10-31 22:02:31",
+      "SIM800 restart command sent"
+    ],
+    [
+      18,
+      "2025-10-30 12:10:36",
+      "Shutdown initiated: Manual shutdown requested via API"
+    ],
+    [
+      17,
+      "2025-10-30 11:49:57",
+      "SMS report config updated: recipient: +264816828893"
+    ],
+    [
+      16,
+      "2025-10-30 11:19:49",
+      "System reboot initiated: Manual reboot requested via SMS GUI"
+    ],
+    [
+      15,
+      "2025-10-30 11:03:07",
+      "CRITICAL: Battery 3.247V (0%) - Initiating shutdown"
+    ],
+    [
+      14,
+      "2025-10-30 10:56:49",
+      "CRITICAL: Battery 3.275V (0%) - Initiating shutdown"
+    ],
+    [
+      13,
+      "2025-10-22 23:49:14",
+      "Battery warning: 3.352V (0%)"
+    ],
+    [
+      12,
+      "2025-10-22 23:44:11",
+      "Battery warning: 3.390V (0%)"
+    ],
+    [
+      11,
+      "2025-10-22 23:39:07",
+      "Battery warning: 3.401V (0%)"
+    ],
+    [
+      10,
+      "2025-10-22 23:34:04",
+      "Battery warning: 3.379V (0%)"
+    ],
+    [
+      9,
+      "2025-10-22 23:29:01",
+      "Battery warning: 3.418V (2%)"
+    ],
+    [
+      8,
+      "2025-10-22 23:23:58",
+      "Battery warning: 3.428V (3%)"
+    ],
+    [
+      7,
+      "2025-10-22 23:18:54",
+      "Battery warning: 3.428V (3%)"
+    ],
+    [
+      6,
+      "2025-10-22 23:13:51",
+      "Battery warning: 3.450V (6%)"
+    ],
+    [
+      5,
+      "2025-10-16 20:52:05",
+      "Shutdown initiated: Manual shutdown requested via SMS GUI"
+    ],
+    [
+      4,
+      "2025-10-16 20:50:27",
+      "System logs cleared: 3 system messages, 3 system SMS entries"
+    ]
+  ],
+  "status": "success"
+}
+2025-10-31 22:20:43,466 - INFO - on_api_success:973 - API request completed successfully
+2025-10-31 22:20:43,466 - DEBUG - on_api_success:974 - Response received: <class 'dict'> - {'count': 16, 'data': [[19, '2025-10-31 22:02:31', 'SIM800 restart command sent'], [18, '2025-10-30 12:10:36', 'Shutdown initiated: Manual shutdown requested via API'], [17, '2025-10-30 11:49:57', 'SMS report config updated: recipient: +264816828893'], [16, '2025-10-30 11:19:49', 'System reboot initiated: Manual reboot requested via SMS GUI'], [15, '2025-10-30 11:03:07', 'CRITICAL: Battery 3.247V (0%) - Initiating shutdown'], [14, '2025-10-30 10:56:49', 'CRITICAL: Battery 3.275V (0%) - Initiating shutdown'], [13, '2025-10-22 23:49:14', 'Battery warning: 3.352V (0%)'], [12, '2025-10-22 23:44:11', 'Battery warning: 3.390V (0%)'], [11, '2025-10-22 23:39:07', 'Battery warning: 3.401V (0%)'], [10, '2025-10-22 23:34:04', 'Battery warning: 3.379V (0%)'], [9, '2025-10-22 23:29:01', 'Battery warning: 3.418V (2%)'], [8, '2025-10-22 23:23:58', 'Battery warning: 3.428V (3%)'], [7, '2025-10-22 23:18:54', 'Battery warning: 3.428V (3%)'], [6, '2025-10-22 23:13:51', 'Battery warning: 3.450V (6%)'], [5, '2025-10-16 20:52:05', 'Shutdown initiated: Manual shutdown requested via SMS GUI'], [4, '2025-10-16 20:50:27', 'System logs cleared: 3 system messages, 3 system SMS entries']], 'status': 'success'}
+2025-10-31 22:20:43,466 - INFO - on_api_success:979 - Response status: success
+2025-10-31 22:20:43,466 - DEBUG - on_api_success:982 - Response data type: <class 'list'>, length: 16
+2025-10-31 22:20:43,466 - DEBUG - on_api_success:987 - Processing response for URL: http://192.168.1.65:24963/api/system/messages
+2025-10-31 22:20:43,466 - DEBUG - on_api_success:1007 - Processing generic response data
+2025-10-31 22:20:43,467 - INFO - on_api_success:1019 - Displayed 16 results
+2025-10-31 22:20:47,615 - ERROR - run:102 - API timeout: Request timeout after 30s: HTTPConnectionPool(host='192.168.1.65', port=24963): Read timed out. (read timeout=30)
+2025-10-31 22:20:47,615 - ERROR - display_error:1151 - Displaying error to user: Connection timeout: HTTPConnectionPool(host='192.168.1.65', port=24963): Read timed out. (read timeout=30)
+2025-10-31 22:20:59,107 - INFO - get_statistics:1205 - Button pressed: Get Statistics
+2025-10-31 22:20:59,107 - INFO - make_api_request:951 - Making API request: GET /stats
+2025-10-31 22:20:59,108 - DEBUG - make_api_request:952 - Request data: None
+2025-10-31 22:20:59,109 - DEBUG - make_api_request:963 - Full request URL: http://192.168.1.65:24963/api/stats
+2025-10-31 22:20:59,110 - DEBUG - __init__:63 - APIWorker created: GET http://192.168.1.65:24963/api/stats, timeout=10s, data=None
+2025-10-31 22:20:59,111 - DEBUG - make_api_request:969 - API worker thread started
+2025-10-31 22:20:59,111 - INFO - run:66 - APIWorker starting request: GET http://192.168.1.65:24963/api/stats
+2025-10-31 22:20:59,111 - DEBUG - run:67 - Request details - Timeout: 10s, Data: None
+2025-10-31 22:20:59,111 - DEBUG - run:73 - Making GET request to http://192.168.1.65:24963/api/stats
+2025-10-31 22:20:59,113 - DEBUG - _new_conn:241 - Starting new HTTP connection (1): 192.168.1.65:24963
+2025-10-31 22:20:59,225 - DEBUG - _make_request:544 - http://192.168.1.65:24963 "GET /api/stats HTTP/1.1" 200 99
+2025-10-31 22:20:59,230 - INFO - run:82 - API Response received in 0.12s - Status: 200
+2025-10-31 22:20:59,230 - DEBUG - run:83 - Response headers: {'Content-Type': 'application/json', 'Content-Length': '99', 'Server': 'Werkzeug/1.0.1 Python/3.9.2', 'Date': 'Fri, 31 Oct 2025 20:20:59 GMT'}
+2025-10-31 22:20:59,230 - INFO - run:88 - Response data type: <class 'dict'>
+2025-10-31 22:20:59,231 - DEBUG - run:89 - Response content: {
+  "data": {
+    "latest_sms": null,
+    "oldest_sms": null,
+    "total_sms": 0,
+    "unique_senders": 0
+  },
+  "status": "success"
+}
+2025-10-31 22:20:59,231 - INFO - on_api_success:973 - API request completed successfully
+2025-10-31 22:20:59,232 - DEBUG - on_api_success:974 - Response received: <class 'dict'> - {'data': {'latest_sms': None, 'oldest_sms': None, 'total_sms': 0, 'unique_senders': 0}, 'status': 'success'}
+2025-10-31 22:20:59,232 - INFO - on_api_success:979 - Response status: success
+2025-10-31 22:20:59,232 - DEBUG - on_api_success:982 - Response data type: <class 'dict'>, length: 4
+2025-10-31 22:20:59,232 - DEBUG - on_api_success:987 - Processing response for URL: http://192.168.1.65:24963/api/stats
+2025-10-31 22:20:59,233 - DEBUG - on_api_success:1007 - Processing generic response data
+2025-10-31 22:20:59,235 - INFO - on_api_success:1019 - Displayed 1 results
+2025-10-31 22:21:03,631 - INFO - main:2191 - Application exiting with code: 0
+2025-10-31 22:21:03,631 - INFO - main:2192 - ================================================================================

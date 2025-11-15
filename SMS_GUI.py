@@ -4,6 +4,7 @@ import json
 import csv
 import requests
 import os
+import logging
 from datetime import datetime, timedelta
 from dotenv import load_dotenv, set_key
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -14,6 +15,39 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QScrollArea, QFrame, QShortcut)
 from PyQt5.QtCore import Qt, QDateTime, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QIcon, QKeySequence
+
+# Configure logging
+def setup_logging():
+    """Setup comprehensive logging for the SMS GUI application"""
+    # Create logs directory if it doesn't exist
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    # Create log filename with timestamp
+    log_filename = os.path.join(log_dir, f"sms_gui_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
+        handlers=[
+            logging.FileHandler(log_filename),
+            logging.StreamHandler(sys.stdout)  # Also log to console
+        ]
+    )
+    
+    logger = logging.getLogger(__name__)
+    logger.info("="*80)
+    logger.info("SMS GUI APPLICATION STARTED")
+    logger.info(f"Log file: {log_filename}")
+    logger.info(f"Python version: {sys.version}")
+    logger.info(f"Working directory: {os.getcwd()}")
+    logger.info("="*80)
+    return logger
+
+# Initialize logging
+logger = setup_logging()
 
 class APIWorker(QThread):
     """Worker thread for API calls to prevent GUI freezing"""
@@ -26,31 +60,76 @@ class APIWorker(QThread):
         self.method = method
         self.data = data
         self.timeout = timeout
+        logger.debug(f"APIWorker created: {method} {url}, timeout={timeout}s, data={data}")
     
     def run(self):
+        logger.info(f"APIWorker starting request: {self.method} {self.url}")
+        logger.debug(f"Request details - Timeout: {self.timeout}s, Data: {self.data}")
+        
         try:
+            start_time = datetime.now()
+            
             if self.method == 'GET':
+                logger.debug(f"Making GET request to {self.url}")
                 response = requests.get(self.url, timeout=self.timeout)
             elif self.method == 'POST':
+                logger.debug(f"Making POST request to {self.url} with data: {self.data}")
                 response = requests.post(self.url, json=self.data, timeout=self.timeout)
             
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            logger.info(f"API Response received in {duration:.2f}s - Status: {response.status_code}")
+            logger.debug(f"Response headers: {dict(response.headers)}")
+            
             if response.status_code == 200:
-                self.finished.emit(response.json())
+                try:
+                    response_data = response.json()
+                    logger.info(f"Response data type: {type(response_data)}")
+                    logger.debug(f"Response content: {json.dumps(response_data, indent=2, default=str)}")
+                    self.finished.emit(response_data)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to decode JSON response: {e}")
+                    logger.debug(f"Raw response text: {response.text}")
+                    self.error.emit(f"Invalid JSON response: {str(e)}")
             else:
-                self.error.emit(f"HTTP {response.status_code}: {response.text}")
+                error_msg = f"HTTP {response.status_code}: {response.text}"
+                logger.warning(f"API request failed: {error_msg}")
+                self.error.emit(error_msg)
+                
+        except requests.exceptions.Timeout as e:
+            error_msg = f"Request timeout after {self.timeout}s: {str(e)}"
+            logger.error(f"API timeout: {error_msg}")
+            self.error.emit(f"Connection timeout: {str(e)}")
+        except requests.exceptions.ConnectionError as e:
+            error_msg = f"Connection error: {str(e)}"
+            logger.error(f"API connection error: {error_msg}")
+            self.error.emit(f"Connection error: {str(e)}")
         except requests.exceptions.RequestException as e:
+            error_msg = f"Request exception: {str(e)}"
+            logger.error(f"API request exception: {error_msg}")
             self.error.emit(f"Connection error: {str(e)}")
         except Exception as e:
+            error_msg = f"Unexpected error: {str(e)}"
+            logger.error(f"Unexpected API error: {error_msg}")
             self.error.emit(f"Unexpected error: {str(e)}")
 
 class SMSGUIApp(QMainWindow):
     def __init__(self):
         super().__init__()
+        logger.info("Initializing SMSGUIApp")
+        
         self.current_data = []
         self.env_file = ".env"
         self.active_threads = []  # Track active threads
+        
+        logger.debug("Loading application settings")
         self.load_settings()
+        
+        logger.debug("Initializing user interface")
         self.init_ui()
+        
+        logger.info("SMSGUIApp initialization complete")
     
     def closeEvent(self, event):
         """Handle application close event"""
@@ -84,12 +163,19 @@ class SMSGUIApp(QMainWindow):
     
     def load_settings(self):
         """Load settings from .env file"""
+        logger.info("Loading settings from .env file")
+        
         if os.path.exists(self.env_file):
+            logger.debug(f"Found .env file: {self.env_file}")
             load_dotenv(self.env_file)
+        else:
+            logger.warning(f"No .env file found at {self.env_file}")
         
         # Set default values
         self.default_host = os.getenv('SMS_GUI_HOST', 'localhost')
         self.default_port = os.getenv('SMS_GUI_PORT', '5000')
+        
+        logger.info(f"Settings loaded - Host: {self.default_host}, Port: {self.default_port}")
     
     def save_settings(self):
         """Save current settings to .env file"""
@@ -305,39 +391,53 @@ class SMSGUIApp(QMainWindow):
     
     def update_connection(self, check_health=True, auto_save=False):
         """Update API base URL from host and port inputs"""
+        logger.info("Updating connection settings")
+        
         host = self.host_input.text().strip() or "localhost"
         port = self.port_input.text().strip() or "5000"
+        
+        logger.debug(f"Connection input - Host: '{host}', Port: '{port}'")
         
         # Validate port
         try:
             port_num = int(port)
             if not (1 <= port_num <= 65535):
-                raise ValueError("Port out of range")
+                logger.warning(f"Invalid port number: {port_num} (out of range)")
+                QMessageBox.warning(self, "Warning", "Please enter a valid port number (1-65535)")
+                self.port_input.setText("5000")
+                port = "5000"
+                logger.info("Port reset to default: 5000")
         except ValueError:
+            logger.warning(f"Invalid port format: '{port}'")
             QMessageBox.warning(self, "Warning", "Please enter a valid port number (1-65535)")
             self.port_input.setText("5000")
             port = "5000"
+            logger.info("Port reset to default: 5000")
         
         # Update API base URL
         self.api_base_url = f"http://{host}:{port}/api"
+        logger.info(f"API base URL updated: {self.api_base_url}")
         self.url_display.setText(f"API URL: {self.api_base_url}")
         
         # Auto-save if requested
         if auto_save:
+            logger.debug("Auto-saving settings")
             self.save_settings()
         
         # Check connection immediately (if status label exists)
         if check_health and hasattr(self, 'status_label'):
+            logger.debug("Checking API health")
             self.check_api_health()
         
         self.statusBar().showMessage(f"Connection updated to {host}:{port}")
+        logger.info(f"Connection update complete: {host}:{port}")
     
     @property
     def current_host_port(self):
         """Get current host and port as tuple"""
         host = self.host_input.text().strip() or "localhost"
         port = self.port_input.text().strip() or "5000"
-        return host, port
+        return (host, port)
     
     def create_api_status_group(self, layout):
         """Create API status group"""
@@ -727,8 +827,8 @@ class SMSGUIApp(QMainWindow):
         
         group_layout.addWidget(actions_frame)
         
-        # Load initial configuration
-        self.get_sms_reports_config()
+        # Load initial configuration (only if API is configured)
+        # This will be called after the user sets up the connection
         
         layout.addWidget(group)
     
@@ -848,78 +948,105 @@ class SMSGUIApp(QMainWindow):
     
     def make_api_request(self, endpoint, method='GET', data=None):
         """Make API request using worker thread"""
+        logger.info(f"Making API request: {method} /{endpoint}")
+        logger.debug(f"Request data: {data}")
+        
         # Check if API URL is set
         if not hasattr(self, 'api_base_url'):
-            self.display_error("API connection not configured. Please set host and port.")
+            error_msg = "API connection not configured. Please set host and port."
+            logger.error(error_msg)
+            self.display_error(error_msg)
             return
             
         self.show_loading(True)
         url = f"{self.api_base_url}/{endpoint}"
+        logger.debug(f"Full request URL: {url}")
         
         self.api_worker = self.create_api_worker(url, method, data)
         self.api_worker.finished.connect(self.on_api_success)
         self.api_worker.error.connect(self.on_api_error)
         self.api_worker.start()
+        logger.debug("API worker thread started")
     
     def on_api_success(self, response):
         """Handle successful API response"""
+        logger.info("API request completed successfully")
+        logger.debug(f"Response received: {type(response)} - {response}")
+        
         self.show_loading(False)
         
         if response.get('status') == 'success':
+            logger.info("Response status: success")
             if 'data' in response:
                 data = response['data']
+                logger.debug(f"Response data type: {type(data)}, length: {len(data) if isinstance(data, (list, dict)) else 'N/A'}")
                 
                 # Special handling for different API endpoints
                 if hasattr(self, 'api_worker') and self.api_worker.url:
                     url = self.api_worker.url
+                    logger.debug(f"Processing response for URL: {url}")
                     
                     if 'sim/status' in url:
+                        logger.info("Processing SIM status response")
                         self.update_sim_status_display(data)
                         # Also display in table for export
                         self.display_results(data)
                     elif 'sim/signal' in url:
+                        logger.info("Processing SIM signal response")
                         self.update_sim_status_display(data, signal_only=True)
                         self.display_results(data)
                     elif 'sim/operator' in url:
+                        logger.info("Processing SIM operator response")
                         self.update_sim_status_display(data, operator_only=True)
                         self.display_results(data)
                     elif 'battery' in url and isinstance(data, dict) and 'voltage' in data:
+                        logger.info("Processing battery status response")
                         self.update_battery_display(data)
                         self.display_results(data)
                     else:
+                        logger.debug("Processing generic response data")
                         self.display_results(data)
                 else:
                     # Fallback - check data type for battery data
                     if isinstance(data, dict) and 'voltage' in data:
+                        logger.info("Processing battery data (fallback detection)")
                         self.update_battery_display(data)
                     self.display_results(data)
                     
                 if data and len(data) > 0:
                     count = response.get('count', len(data) if isinstance(data, list) else 1)
                     self.results_count_label.setText(f"{count} results")
+                    logger.info(f"Displayed {count} results")
                 else:
                     # Empty result set
                     self.results_count_label.setText("0 results")
                     self.display_message("No data found matching your query")
+                    logger.info("Empty result set received")
             else:
                 # Handle responses without data (like shutdown confirmation)
                 message = response.get('message', 'Operation completed successfully')
+                logger.info(f"Response message: {message}")
                 self.display_message(message)
                 
                 # Special handling for system operation responses
                 if any(keyword in message.lower() for keyword in ['shutdown', 'reboot', 'restart', 'pin', 'delete', 'clear']):
+                    logger.info("Showing system operation result dialog")
                     QMessageBox.information(self, "Operation Result", message)
         else:
             # Handle warning status (partial success)
             if response.get('status') == 'warning':
                 message = response.get('message', 'Operation completed with warnings')
+                logger.warning(f"API warning: {message}")
                 QMessageBox.warning(self, "Warning", message)
                 self.display_message(message)
             else:
-                self.display_error(response.get('message', 'Unknown error'))
+                error_message = response.get('message', 'Unknown error')
+                logger.error(f"API error response: {error_message}")
+                self.display_error(error_message)
     
     def on_api_error(self, error_msg):
         """Handle API error with enhanced timeout messaging"""
+        logger.error(f"API request failed: {error_msg}")
         self.show_loading(False)
         
         # Provide more helpful messages for timeout errors
@@ -931,10 +1058,13 @@ class SMSGUIApp(QMainWindow):
                     "The module may be busy or the operation may take longer than expected. "
                     "Please try again in a moment."
                 )
+                logger.warning("SIM800L operation timeout - this may be normal")
             else:
                 enhanced_msg = f"Request timed out: {error_msg}\n\nThe server may be busy. Please try again."
+                logger.warning("General request timeout")
         else:
             enhanced_msg = error_msg
+            logger.error(f"Non-timeout API error: {error_msg}")
             
         self.display_error(enhanced_msg)
     
@@ -1018,46 +1148,70 @@ class SMSGUIApp(QMainWindow):
     
     def display_error(self, error_msg):
         """Display error message"""
+        logger.error(f"Displaying error to user: {error_msg}")
         QMessageBox.critical(self, "Error", error_msg)
         self.statusBar().showMessage(f"Error: {error_msg}")
     
     def check_api_health(self):
         """Check API health status"""
+        logger.info("Checking API health")
+        
         # Make sure status_label exists
         if not hasattr(self, 'status_label'):
+            logger.warning("Status label not found, skipping health check")
             return
             
         try:
             host, port = self.current_host_port
             health_url = f"http://{host}:{port}/api/health"
+            logger.debug(f"Health check URL: {health_url}")
+            
             response = requests.get(health_url, timeout=5)
+            logger.info(f"Health check response: {response.status_code}")
+            
             if response.status_code == 200:
                 self.status_label.setText("✓ API Connected")
                 self.status_label.setStyleSheet("color: green; font-weight: bold;")
                 self.setWindowTitle(f"SMS Database Viewer - Connected to {host}:{port}")
+                logger.info(f"API health check successful - connected to {host}:{port}")
+                
+                # Load SMS reports config after successful connection
+                if hasattr(self, 'get_sms_reports_config'):
+                    try:
+                        logger.debug("Loading SMS reports configuration after successful connection")
+                        self.get_sms_reports_config()
+                    except Exception as e:
+                        logger.error(f"Failed to load SMS reports config: {e}")
             else:
                 self.status_label.setText("✗ API Error")
                 self.status_label.setStyleSheet("color: red; font-weight: bold;")
                 self.setWindowTitle("SMS Database Viewer - Connection Error")
+                logger.warning(f"API health check failed with status {response.status_code}")
         except Exception as e:
             self.status_label.setText("✗ API Offline")
             self.status_label.setStyleSheet("color: red; font-weight: bold;")
             self.setWindowTitle("SMS Database Viewer - Offline")
             # Show error details in status bar
             self.statusBar().showMessage(f"Connection failed: {str(e)}")
+            logger.error(f"API health check failed: {str(e)}")
     
     def get_all_sms(self):
         """Get all SMS messages"""
+        logger.info("Button pressed: Get All SMS")
         self.make_api_request("sms")
     
     def get_statistics(self):
         """Get database statistics"""
+        logger.info("Button pressed: Get Statistics")
         self.make_api_request("stats")
     
     def get_sms_by_sender(self):
         """Get SMS by sender"""
         sender = self.sender_input.text().strip()
+        logger.info(f"Button pressed: Get SMS by Sender - '{sender}'")
+        
         if not sender:
+            logger.warning("No sender specified for SMS search")
             QMessageBox.warning(self, "Warning", "Please enter a sender number")
             return
         self.make_api_request(f"sms/sender/{sender}")
@@ -1065,7 +1219,10 @@ class SMSGUIApp(QMainWindow):
     def search_sms_by_keyword(self):
         """Search SMS by keyword"""
         keyword = self.keyword_input.text().strip()
+        logger.info(f"Button pressed: Search SMS by Keyword - '{keyword}'")
+        
         if not keyword:
+            logger.warning("No keyword specified for SMS search")
             QMessageBox.warning(self, "Warning", "Please enter a keyword")
             return
         self.make_api_request(f"sms/search?keyword={keyword}")
@@ -1074,6 +1231,7 @@ class SMSGUIApp(QMainWindow):
         """Get SMS by date range"""
         start = self.start_date.dateTime().toString("yyyy-MM-dd hh:mm:ss")
         end = self.end_date.dateTime().toString("yyyy-MM-dd hh:mm:ss")
+        logger.info(f"Button pressed: Get SMS by Date Range - {start} to {end}")
         self.make_api_request(f"sms/date-range?start={start}&end={end}")
     
     def execute_custom_query(self):
@@ -1216,23 +1374,31 @@ class SMSGUIApp(QMainWindow):
     
     def get_battery_status(self):
         """Get battery status from API (with extended timeout for SIM800L communication)"""
+        logger.info("Button pressed: Get Battery Status")
         self.statusBar().showMessage("Getting battery status (may take 30+ seconds for SIM800L communication)...")
         self.make_api_request_with_timeout("battery", timeout=30)
     
     def make_api_request_with_timeout(self, endpoint, method='GET', data=None, timeout=30):
         """Make API request with custom timeout for slow operations"""
+        logger.info(f"Making API request with timeout: {method} /{endpoint} (timeout={timeout}s)")
+        logger.debug(f"Request data: {data}")
+        
         # Check if API URL is set
         if not hasattr(self, 'api_base_url'):
-            self.display_error("API connection not configured. Please set host and port.")
+            error_msg = "API connection not configured. Please set host and port."
+            logger.error(error_msg)
+            self.display_error(error_msg)
             return
             
         self.show_loading(True)
         url = f"{self.api_base_url}/{endpoint}"
+        logger.debug(f"Full request URL: {url}")
         
         self.api_worker = self.create_api_worker(url, method, data, timeout)
         self.api_worker.finished.connect(self.on_api_success)
         self.api_worker.error.connect(self.on_api_error)
         self.api_worker.start()
+        logger.debug(f"API worker thread started with {timeout}s timeout")
     
     def toggle_battery_timer(self):
         """Toggle auto-refresh timer for battery status"""
@@ -1264,6 +1430,8 @@ class SMSGUIApp(QMainWindow):
     
     def confirm_system_shutdown(self):
         """Confirm and execute system shutdown"""
+        logger.info("Button pressed: System Shutdown")
+        
         reply = QMessageBox.question(
             self, 
             "Confirm Shutdown",
@@ -1271,6 +1439,8 @@ class SMSGUIApp(QMainWindow):
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
+        
+        logger.debug(f"First shutdown confirmation: {'Yes' if reply == QMessageBox.Yes else 'No'}")
         
         if reply == QMessageBox.Yes:
             # Second confirmation for safety
@@ -1282,15 +1452,24 @@ class SMSGUIApp(QMainWindow):
                 QMessageBox.No
             )
             
+            logger.debug(f"Final shutdown confirmation: {'Yes' if reply2 == QMessageBox.Yes else 'No'}")
+            
             if reply2 == QMessageBox.Yes:
                 data = {
                     "confirm": True,
                     "reason": "Manual shutdown requested via SMS GUI"
                 }
+                logger.warning("EXECUTING SYSTEM SHUTDOWN")
                 self.make_api_request("system/shutdown", "POST", data)
+            else:
+                logger.info("System shutdown cancelled by user")
+        else:
+            logger.info("System shutdown cancelled by user")
     
     def confirm_system_reboot(self):
         """Confirm and execute system reboot"""
+        logger.info("Button pressed: System Reboot")
+        
         reply = QMessageBox.question(
             self, 
             "Confirm Reboot",
@@ -1299,12 +1478,17 @@ class SMSGUIApp(QMainWindow):
             QMessageBox.No
         )
         
+        logger.debug(f"Reboot confirmation: {'Yes' if reply == QMessageBox.Yes else 'No'}")
+        
         if reply == QMessageBox.Yes:
             data = {
                 "confirm": True,
                 "reason": "Manual reboot requested via SMS GUI"
             }
+            logger.warning("EXECUTING SYSTEM REBOOT")
             self.make_api_request("system/reboot", "POST", data)
+        else:
+            logger.info("System reboot cancelled by user")
     
     def confirm_sim_restart(self):
         """Confirm and restart SIM800 module"""
@@ -1381,16 +1565,19 @@ class SMSGUIApp(QMainWindow):
     
     def get_sim_status(self):
         """Get comprehensive SIM status (with extended timeout for SIM800L communication)"""
+        logger.info("Button pressed: Get SIM Status")
         self.statusBar().showMessage("Getting SIM status (may take 30+ seconds for SIM800L communication)...")
         self.make_api_request_with_timeout("sim/status", timeout=30)
     
     def get_signal_strength(self):
         """Get signal strength information (with extended timeout for SIM800L communication)"""
+        logger.info("Button pressed: Get Signal Strength")
         self.statusBar().showMessage("Getting signal strength (may take 25+ seconds for SIM800L communication)...")
         self.make_api_request_with_timeout("sim/signal", timeout=25)
     
     def get_network_operator(self):
         """Get network operator information (with extended timeout for SIM800L communication)"""
+        logger.info("Button pressed: Get Network Operator")
         self.statusBar().showMessage("Getting network operator (may take 25+ seconds for SIM800L communication)...")
         self.make_api_request_with_timeout("sim/operator", timeout=25)
     
@@ -1730,11 +1917,16 @@ class SMSGUIApp(QMainWindow):
             url = f"{self.api_base_url}/sms-reports/config"
             worker = self.create_api_worker(url, 'GET', timeout=20)
             worker.finished.connect(self.on_sms_reports_config_received)
-            worker.error.connect(self.display_error)
+            worker.error.connect(self.on_sms_reports_config_error)
             worker.start()
             self.statusBar().showMessage("Loading SMS reports configuration (may take 20+ seconds)...")
         except Exception as e:
-            self.display_error(f"Failed to get SMS reports config: {str(e)}")
+            self.on_sms_reports_config_error(f"Failed to get SMS reports config: {str(e)}")
+    
+    def on_sms_reports_config_error(self, error_msg):
+        """Handle SMS reports configuration error"""
+        self.sms_reports_status.setText(f"Status: Error - {error_msg}")
+        self.sms_reports_status.setStyleSheet("font-size: 10px; color: red;")
     
     def on_sms_reports_config_received(self, response):
         """Handle SMS reports configuration response"""
@@ -1865,8 +2057,11 @@ class SMSGUIApp(QMainWindow):
     
     def send_report_now(self):
         """Send status report immediately"""
+        logger.info("Button pressed: Send Report Now")
+        
         try:
             recipient = self.recipient_input.text().strip()
+            logger.debug(f"Report recipient: '{recipient}'")
             
             # Ask for confirmation
             reply = QMessageBox.question(
@@ -1877,13 +2072,17 @@ class SMSGUIApp(QMainWindow):
                 QMessageBox.No
             )
             
+            logger.debug(f"Send report confirmation: {'Yes' if reply == QMessageBox.Yes else 'No'}")
+            
             if reply != QMessageBox.Yes:
+                logger.info("Send report cancelled by user")
                 return
             
             data = {}
             if recipient:
                 data['recipient'] = recipient
             
+            logger.info(f"Sending SMS report to: {recipient or 'default recipient'}")
             url = f"{self.api_base_url}/sms-reports/send-now"
             worker = self.create_api_worker(url, 'POST', data, timeout=60)
             worker.finished.connect(self.on_report_sent)
@@ -1892,6 +2091,7 @@ class SMSGUIApp(QMainWindow):
             self.statusBar().showMessage("Sending status report (may take 60+ seconds for SMS transmission)...")
             
         except Exception as e:
+            logger.error(f"Error in send_report_now: {str(e)}")
             self.display_error(f"Failed to send report: {str(e)}")
     
     def on_report_sent(self, response):
@@ -1968,17 +2168,29 @@ class SMSGUIApp(QMainWindow):
             self.display_error(f"Error processing test SMS: {str(e)}")
 
 def main():
+    logger.info("Starting SMS GUI application")
+    
     app = QApplication(sys.argv)
+    logger.debug(f"Qt Application created - version: {app.applicationVersion()}")
     
     # Set application properties
     app.setApplicationName("SMS Database Viewer with Battery Monitor")
     app.setApplicationVersion("1.1")
+    logger.info("Application properties set")
     
     # Create and show main window
+    logger.debug("Creating main window")
     window = SMSGUIApp()
+    
+    logger.debug("Showing main window")
     window.show()
     
-    sys.exit(app.exec_())
+    logger.info("Entering Qt event loop")
+    exit_code = app.exec_()
+    
+    logger.info(f"Application exiting with code: {exit_code}")
+    logger.info("="*80)
+    sys.exit(exit_code)
 
 if __name__ == "__main__":
     main()

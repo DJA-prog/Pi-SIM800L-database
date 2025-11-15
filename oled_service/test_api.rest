@@ -1,0 +1,116 @@
+# OLED Display Service API Tests
+# Use these with curl, Postman, or VS Code REST Client
+
+@baseUrl = http://192.168.1.65:5001/api
+
+### Health Check
+GET {{baseUrl}}/health
+
+### Get Service Status
+GET {{baseUrl}}/status
+
+### Get Configuration
+GET {{baseUrl}}/config
+
+### Update Display Data
+POST {{baseUrl}}/display/update
+Content-Type: application/json
+
+{
+  "wifi_ip": "192.168.1.100",
+  "battery_percent": 85,
+  "message_count": 3
+}
+
+### Set Display Mode to Custom
+POST {{baseUrl}}/display/mode
+Content-Type: application/json
+
+{
+  "mode": "custom"
+}
+
+### Set Display Mode to DateTime
+POST {{baseUrl}}/display/mode
+Content-Type: application/json
+
+{
+  "mode": "datetime"
+}
+
+### Set Display Mode to Startup
+POST {{baseUrl}}/display/mode
+Content-Type: application/json
+
+{
+  "mode": "startup"
+}
+
+### Turn Off Display
+POST {{baseUrl}}/display/mode
+Content-Type: application/json
+
+{
+  "mode": "off"
+}
+
+### Clear Display
+POST {{baseUrl}}/display/clear
+
+### Display Custom Text
+POST {{baseUrl}}/display/text
+Content-Type: application/json
+
+{
+  "lines": ["Hello World!", "Line 2", "Line 3"]
+}
+
+### Test Battery Update
+POST {{baseUrl}}/display/update
+Content-Type: application/json
+
+{
+  "battery_percent": 75
+}
+
+### Test WiFi IP Update
+POST {{baseUrl}}/display/update
+Content-Type: application/json
+
+{
+  "wifi_ip": "10.0.0.50"
+}
+
+### Test Message Count Update
+POST {{baseUrl}}/display/update
+Content-Type: application/json
+
+{
+  "message_count": 12
+}
+
+### Complete Status Update
+POST {{baseUrl}}/display/update
+Content-Type: application/json
+
+{
+  "wifi_ip": "192.168.4.1",
+  "battery_percent": 95,
+  "message_count": 7
+}
+
+### Error Test - Invalid Mode
+POST {{baseUrl}}/display/mode
+Content-Type: application/json
+
+{
+  "mode": "invalid"
+}
+
+### Error Test - Too Many Lines
+POST {{baseUrl}}/display/text
+Content-Type: application/json
+
+{
+  "lines": ["Line 1", "Line 2", "Line 3", "Line 4", "Line 5"]
+}

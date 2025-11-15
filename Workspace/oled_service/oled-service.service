@@ -1,0 +1,37 @@
+[Unit]
+Description=OLED Display API Service
+Documentation=https://github.com/your-repo/oled-service
+After=network.target
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=user01
+Group=user01
+WorkingDirectory=/home/user01/oled_service
+Environment=PATH=/home/user01/oled_service/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStartPre=/bin/sleep 10
+ExecStart=/home/user01/oled_service/venv/bin/python3 /home/user01/oled_service/oled_api_service.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=oled-service
+
+# Resource limits for Pi Zero W
+MemoryLimit=128M
+CPUQuota=25%
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log /home/user01/oled_service
+
+# I2C access
+SupplementaryGroups=i2c gpio
+
+[Install]
+WantedBy=multi-user.target

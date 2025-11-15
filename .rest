@@ -1,12 +1,20 @@
-# SMS Database API Tests
+# SMS Database API Tests - Complete API Reference
 # Base URL for the API
 @baseUrl = http://piHome02:24963/api
+
+# =================================================================
+# BASIC HEALTH & CONFIG
+# =================================================================
 
 ### Health Check
 GET {{baseUrl}}/health
 
 ### Get System Configuration
 GET {{baseUrl}}/config
+
+# =================================================================
+# SMS MESSAGE OPERATIONS
+# =================================================================
 
 ### Get All SMS Messages
 GET {{baseUrl}}/sms
@@ -20,22 +28,201 @@ GET {{baseUrl}}/sms/search?keyword=hello
 ### Get SMS by Date Range
 GET {{baseUrl}}/sms/date-range?start=2025-10-01 00:00:00&end=2025-10-02 23:59:59
 
+### Get Unique SMS Senders
+GET {{baseUrl}}/sms/unique-senders
+
+### Get SMS Date Range Information
+GET {{baseUrl}}/sms/date-range-info
+
+# =================================================================
+# DATABASE STATISTICS
+# =================================================================
+
 ### Get Database Statistics
 GET {{baseUrl}}/stats
+
+### Get Detailed Data Statistics
+GET {{baseUrl}}/data/stats
+
+# =================================================================
+# BATTERY MONITORING
+# =================================================================
 
 ### Get Battery Status
 GET {{baseUrl}}/battery
 
+### Get Battery Debug Information
+GET {{baseUrl}}/battery/debug
+
 ### Get Battery History
 GET {{baseUrl}}/battery/history
 
-### Manual System Shutdown (use with caution!)
+### Get Battery Voltage History
+GET {{baseUrl}}/battery/voltage-history
+
+### Set Battery Monitoring Interval
+POST {{baseUrl}}/battery/set_interval
+Content-Type: application/json
+
+{
+  "interval": 300
+}
+
+# =================================================================
+# SIM800L MODULE OPERATIONS
+# =================================================================
+
+### Get Comprehensive SIM Status
+GET {{baseUrl}}/sim/status
+
+### Get Signal Strength
+GET {{baseUrl}}/sim/signal
+
+### Get Network Operator
+GET {{baseUrl}}/sim/operator
+
+### Restart SIM800 Module
+POST {{baseUrl}}/sim/restart
+Content-Type: application/json
+
+{
+  "confirm": true
+}
+
+### Set SIM PIN
+POST {{baseUrl}}/sim/set_pin
+Content-Type: application/json
+
+{
+  "pin": "1234"
+}
+
+# =================================================================
+# SYSTEM OPERATIONS
+# =================================================================
+
+### Get System Messages
+GET {{baseUrl}}/system/messages
+
+### Get System Messages with Limit
+GET {{baseUrl}}/system/messages?limit=50
+
+### Get System Logs
+GET {{baseUrl}}/system/logs
+
+### Get System Logs with Filter
+GET {{baseUrl}}/system/logs?filter=battery
+
+### Get OLED Display Status
+GET {{baseUrl}}/system/oled-status
+
+### System Reboot (use with caution!)
+POST {{baseUrl}}/system/reboot
+Content-Type: application/json
+
+{
+  "confirm": true,
+  "reason": "Manual reboot requested via API"
+}
+
+### System Shutdown (use with caution!)
 POST {{baseUrl}}/system/shutdown
 Content-Type: application/json
 
 {
-  "force": false
+  "confirm": true,
+  "reason": "Manual shutdown requested via API"
 }
+
+# =================================================================
+# DATA MANAGEMENT (DESTRUCTIVE OPERATIONS)
+# =================================================================
+
+### Create Database Backup
+GET {{baseUrl}}/data/backup
+
+### Delete All Data (SMS + System Messages) - DESTRUCTIVE!
+POST {{baseUrl}}/data/delete-all
+Content-Type: application/json
+
+{
+  "confirm": true
+}
+
+### Delete Only SMS Messages - DESTRUCTIVE!
+POST {{baseUrl}}/data/delete-sms
+Content-Type: application/json
+
+{
+  "confirm": true
+}
+
+### Clear System Logs Only - DESTRUCTIVE!
+POST {{baseUrl}}/data/clear-system-logs
+Content-Type: application/json
+
+{
+  "confirm": true
+}
+
+### Delete Messages by Sender - DESTRUCTIVE!
+POST {{baseUrl}}/data/delete-by-sender
+Content-Type: application/json
+
+{
+  "sender": "+1234567890",
+  "confirm": true
+}
+
+### Delete Messages by Keyword - DESTRUCTIVE!
+POST {{baseUrl}}/data/delete-by-keyword
+Content-Type: application/json
+
+{
+  "keyword": "spam",
+  "confirm": true
+}
+
+# =================================================================
+# SMS REPORTS SYSTEM
+# =================================================================
+
+### Get SMS Reports Configuration
+GET {{baseUrl}}/sms-reports/config
+
+### Update SMS Reports Configuration
+POST {{baseUrl}}/sms-reports/config
+Content-Type: application/json
+
+{
+  "enabled": true,
+  "recipient": "+264816828893",
+  "interval_hours": 168
+}
+
+### Preview Status Report
+GET {{baseUrl}}/sms-reports/preview
+
+### Send Status Report Now
+POST {{baseUrl}}/sms-reports/send-now
+Content-Type: application/json
+
+{
+  "recipient": "+264816828893"
+}
+
+### Send Test SMS
+POST {{baseUrl}}/sms-reports/test-sms
+Content-Type: application/json
+
+{
+  "recipient": "+264816828893",
+  "message": "Test SMS from API"
+}
+
+# =================================================================
+# CUSTOM QUERIES
+# =================================================================
 
 ### Execute Custom Query - Count all SMS
 POST {{baseUrl}}/query
@@ -88,6 +275,43 @@ Content-Type: application/json
   "params": ["2025-10-01"]
 }
 
+### Execute Custom Query - Get SMS from last hour
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT * FROM sms WHERE datetime(timestamp) >= datetime('now', '-1 hour') ORDER BY timestamp DESC"
+}
+
+### Execute Custom Query - Get SMS statistics by sender
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "SELECT sender, COUNT(*) as count, MIN(timestamp) as first_message, MAX(timestamp) as last_message FROM sms GROUP BY sender ORDER BY count DESC"
+}
+
+### Execute Custom Query - Show Table Structure
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "PRAGMA table_info(sms)"
+}
+
+### Execute Custom Query - Insert Test Data (if needed)
+POST {{baseUrl}}/query
+Content-Type: application/json
+
+{
+  "query": "INSERT INTO sms (sender, timestamp, text) VALUES (?, ?, ?)",
+  "params": ["+1234567890", "2025-10-02 12:00:00", "Test message from REST client"]
+}
+
+# =================================================================
+# ERROR HANDLING TESTS
+# =================================================================
+
 ### Test Error Handling - Invalid Query
 POST {{baseUrl}}/query
 Content-Type: application/json
@@ -119,89 +343,65 @@ GET {{baseUrl}}/sms/search
 ### Test Error Handling - Missing Date Parameters
 GET {{baseUrl}}/sms/date-range?start=2025-10-01
 
-### Test Database Schema - Show Table Structure
-POST {{baseUrl}}/query
+### Test Error Handling - Delete without confirmation
+POST {{baseUrl}}/data/delete-all
 Content-Type: application/json
 
 {
-  "query": "PRAGMA table_info(sms)"
+  "confirm": false
 }
 
-### Insert Test Data (if needed for testing)
-POST {{baseUrl}}/query
-Content-Type: application/json
-
-{
-  "query": "INSERT INTO sms (sender, timestamp, text) VALUES (?, ?, ?)",
-  "params": ["+1234567890", "2025-10-02 12:00:00", "Test message from REST client"]
-}
-
-### Get SMS from last hour
-POST {{baseUrl}}/query
-Content-Type: application/json
-
-{
-  "query": "SELECT * FROM sms WHERE datetime(timestamp) >= datetime('now', '-1 hour') ORDER BY timestamp DESC"
-}
-
-### Get SMS statistics by sender
-POST {{baseUrl}}/query
-Content-Type: application/json
-
-{
-  "query": "SELECT sender, COUNT(*) as count, MIN(timestamp) as first_message, MAX(timestamp) as last_message FROM sms GROUP BY sender ORDER BY count DESC"
-}
-
-### Get Battery Status
-GET {{baseUrl}}/battery
-
-### Get Battery Debug Information
-GET {{baseUrl}}/battery/debug
-
-### Set Battery Monitoring Interval
+### Test Error Handling - Invalid Battery Interval
 POST {{baseUrl}}/battery/set_interval
 Content-Type: application/json
 
 {
-  "interval": 300
+  "interval": -1
 }
 
-### Restart SIM800 Module
-POST {{baseUrl}}/sim/restart
+### Test Error Handling - Invalid SMS Report Interval
+POST {{baseUrl}}/sms-reports/config
 Content-Type: application/json
 
 {
-  "confirm": true
+  "interval_hours": 0.1
 }
 
-### Set SIM PIN
-POST {{baseUrl}}/sim/set_pin
+# =================================================================
+# ADVANCED QUERIES AND OPERATIONS
+# =================================================================
+
+### Get System Information via Query
+POST {{baseUrl}}/query
 Content-Type: application/json
 
 {
-  "pin": "1234"
+  "query": "SELECT 'SMS Count' as metric, COUNT(*) as value FROM sms UNION ALL SELECT 'System Messages', COUNT(*) FROM system_messages"
 }
 
-### Get System Messages
-GET {{baseUrl}}/system/messages
-
-### Get System Messages with Limit
-GET {{baseUrl}}/system/messages?limit=50
-
-### System Reboot (use with caution!)
-POST {{baseUrl}}/system/reboot
+### Get Battery History via Query  
+POST {{baseUrl}}/query
 Content-Type: application/json
 
 {
-  "confirm": true,
-  "reason": "Manual reboot requested via API"
+  "query": "SELECT * FROM system_messages WHERE message LIKE '%Battery%' ORDER BY timestamp DESC LIMIT 10"
 }
 
-### System Shutdown (use with caution!)
-POST {{baseUrl}}/system/shutdown
+### Get Recent Activity Summary
+POST {{baseUrl}}/query
 Content-Type: application/json
 
 {
-  "confirm": true,
-  "reason": "Manual shutdown requested via API"
+  "query": "SELECT DATE(timestamp) as date, COUNT(*) as sms_count FROM sms WHERE DATE(timestamp) >= DATE('now', '-7 days') GROUP BY DATE(timestamp) ORDER BY date DESC"
 }
+
+# =================================================================
+# NOTES
+# =================================================================
+
+# WARNING: Destructive operations (delete/clear) require confirm=true
+# SIM800L operations may take 30+ seconds due to hardware communication
+# Battery operations require SIM800L module to be connected and responsive
+# System shutdown/reboot operations are irreversible - use with extreme caution
+# SMS Reports require valid phone number in international format (+country code)
+# Custom queries have full SQL access - be careful with destructive operations
