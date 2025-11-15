@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-SIM800L GSM Module SMS Sender for Raspberry Pi Zero W
-Complete test suite: CPIN check, network connection, SMS sending
+SIM800L GSM Module SMS Receiver for Raspberry Pi Zero W
+Listen for incoming SMS messages and display them
 """
 
 import os
@@ -21,11 +21,9 @@ SIM_PIN = os.getenv('SIM_PIN', '9438')
 # Pigpio configuration
 TIMEOUT = 10  # Command timeout in seconds
 
-# Test phone number (replace with actual number for testing)
-TEST_PHONE_NUMBER = os.getenv('TEST_PHONE_NUMBER', '+264816828893')
-
 # Debug configuration
-SHOW_RAW_DEBUG = os.getenv('SHOW_RAW_DEBUG', 'false').lower() == 'true'  # Set to False to disable raw output
+SHOW_RAW_DEBUG = os.getenv('SHOW_RAW_DEBUG', 'true').lower() == 'true'  # Set to False to disable raw output
+AUTO_DELETE_SMS = os.getenv('AUTO_DELETE_SMS', 'true').lower() == 'true'  # Auto-delete SMS after reading
 
 # Global pigpio instance
 pi = None
@@ -519,106 +517,396 @@ class SIM800L:
         logger.error(f"✗ Failed to get signal quality: {response}")
         return False
     
-    def send_sms(self, phone_number, message):
-        """Send SMS message using improved UART handling"""
-        logger.info(f"Sending SMS to {phone_number}...")
+    def check_and_read_sms(self, timeout_override=None):
+        """Check for new SMS messages and return them"""
+        logger.info("Checking for SMS messages...")
         
         # Set SMS text mode
-        success, response = self.send_command("AT+CMGF=1", 1, "OK")
+        success, response = self.send_command("AT+CMGF=1", 0.5, "OK", timeout_override or 2)
         if not success:
             logger.error("Failed to set SMS text mode")
-            return False
+            return []
         
-        # Start SMS composition
-        success, response = self.send_command(f'AT+CMGS="{phone_number}"', 1, ">")
+        # List all messages (unread and read) with shorter timeout
+        success, response = self.send_command("AT+CMGL=\"ALL\"", 0.5, "OK", timeout_override or 3)
         if not success:
-            logger.error("Failed to start SMS composition")
-            return False
+            logger.error("Failed to list SMS messages")
+            return []
         
-        # Send message content using improved method
-        try:
-            if SHOW_RAW_DEBUG:
-                print(f"RAW SMS SEND: {repr(message + chr(26))}")
-                print(f"RAW SMS SEND HEX: {(message + chr(26)).encode().hex()}")
-            
-            with uart_lock:
-                flush_uart()
-                # Send message without \r\n (uart_send adds it automatically, but we don't want it for SMS content)
-                self.pi.wave_clear()
-                self.pi.wave_add_serial(TX_PIN, BAUDRATE, message.encode())
-                wid = self.pi.wave_create()
-                self.pi.wave_send_once(wid)
-                while self.pi.wave_tx_busy():
-                    time.sleep(0.01)
-                self.pi.wave_delete(wid)
-                
-                # Send Ctrl+Z separately
-                self.pi.wave_clear()
-                self.pi.wave_add_serial(TX_PIN, BAUDRATE, chr(26).encode())
-                wid = self.pi.wave_create()
-                self.pi.wave_send_once(wid)
-                while self.pi.wave_tx_busy():
-                    time.sleep(0.01)
-                self.pi.wave_delete(wid)
-                
-                # SMS has a special response pattern:
-                # 1. Message echo (immediately)
-                # 2. Network processing time (5-30 seconds)  
-                # 3. +CMGS: response or ERROR
-                
-                if SHOW_RAW_DEBUG:
-                    print("Waiting for message echo...")
-                initial_response = uart_read(timeout=5)  # Get the echo quickly
-                if SHOW_RAW_DEBUG:
-                    print(f"Initial response: {repr(initial_response)}")
-                
-                total_response = initial_response
-                
-                # If we got the echo but not the final response, wait for network confirmation
-                if initial_response and "+CMGS:" not in initial_response and "ERROR" not in initial_response:
-                    if SHOW_RAW_DEBUG:
-                        print("Message echo received, waiting for network confirmation...")
-                    
-                    # Use a custom read loop for SMS responses
-                    deadline = time.time() + 25  # Wait up to 25 seconds for network response
-                    while time.time() < deadline:
-                        count, data = self.pi.bb_serial_read(RX_PIN)
-                        if count:
-                            chunk = data.decode(errors='ignore')
-                            total_response += chunk
-                            if SHOW_RAW_DEBUG:
-                                print(f"Network response chunk: {repr(chunk)}")
+        messages = []
+        if "+CMGL:" in response:
+            # Parse SMS messages from response
+            lines = response.split('\n')
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                if line.startswith('+CMGL:'):
+                    # Parse SMS header: +CMGL: index,"status","sender","","timestamp"
+                    try:
+                        # Extract message info
+                        parts = line.split(',')
+                        if len(parts) >= 3:
+                            index = parts[0].split(':')[1].strip()
+                            status = parts[1].strip(' "')
+                            sender = parts[2].strip(' "')
                             
-                            # Check if we have the final response
-                            if "+CMGS:" in total_response or "ERROR" in total_response:
-                                # Wait a bit more for any trailing data (like OK)
-                                time.sleep(0.2)
-                                count, data = self.pi.bb_serial_read(RX_PIN)
-                                if count:
-                                    total_response += data.decode(errors='ignore')
+                            # Get timestamp if available
+                            timestamp = ""
+                            if len(parts) >= 5:
+                                timestamp = parts[4].strip(' "')
+                            
+                            # The message content is on the next line
+                            if i + 1 < len(lines):
+                                message_content = lines[i + 1].strip()
+                                
+                                messages.append({
+                                    'index': index,
+                                    'status': status,
+                                    'sender': sender,
+                                    'timestamp': timestamp,
+                                    'content': message_content
+                                })
+                                
+                                logger.info(f"Found SMS #{index} from {sender}: {message_content[:50]}...")
+                    except Exception as e:
+                        logger.warning(f"Failed to parse SMS line: {line}, error: {e}")
+                i += 1
+        else:
+            logger.info("No SMS messages found")
+        
+        return messages
+    
+    def delete_sms(self, index):
+        """Delete SMS message by index"""
+        success, response = self.send_command(f"AT+CMGD={index}", 0.5, "OK", 3)
+        if success:
+            logger.info(f"✓ Deleted SMS message #{index}")
+        else:
+            logger.warning(f"Failed to delete SMS #{index}: {response}")
+        return success
+    
+    def delete_all_sms(self):
+        """Delete all SMS messages"""
+        success, response = self.send_command("AT+CMGDA=\"DEL ALL\"", 5, "OK")
+        if success:
+            logger.info("✓ Deleted all SMS messages")
+        else:
+            logger.warning(f"Failed to delete all SMS: {response}")
+        return success
+    
+    def listen_for_new_sms(self, duration_seconds=None):
+        """Listen for incoming SMS notifications"""
+        logger.info("Setting up SMS notifications...")
+        
+        # Enable SMS notifications
+        success, response = self.send_command("AT+CNMI=2,1,0,0,0", 2, "OK")
+        if not success:
+            logger.warning("Failed to enable SMS notifications, will use polling instead")
+            return self.poll_for_sms(duration_seconds)
+        
+        logger.info(f"✓ SMS notifications enabled")
+        if duration_seconds:
+            logger.info(f"Listening for incoming SMS for {duration_seconds} seconds...")
+            logger.info("Press Ctrl+C to stop listening")
+        else:
+            logger.info("Listening for incoming SMS indefinitely...")
+            logger.info("Press Ctrl+C to stop listening")
+        
+        start_time = time.time()
+        
+        try:
+            while True:
+                # Check if duration limit reached
+                if duration_seconds and (time.time() - start_time) > duration_seconds:
+                    logger.info(f"Listening duration of {duration_seconds} seconds completed")
+                    break
+                
+                # Listen for incoming data
+                with uart_lock:
+                    count, data = self.pi.bb_serial_read(RX_PIN)
+                    if count > 0:
+                        message = data.decode(errors='ignore')
+                        if SHOW_RAW_DEBUG:
+                            print(f"RAW RECEIVE: {repr(message)}")
+                        
+                        # Check for SMS notification: +CMTI: "SM",index
+                        if "+CMTI:" in message:
+                            logger.info("📱 New SMS notification received!")
+                            # Extract SMS index
+                            try:
+                                match = re.search(r'\+CMTI:\s*"[^"]*",(\d+)', message)
+                                if match:
+                                    sms_index = match.group(1)
+                                    logger.info(f"New SMS detected at index {sms_index}")
+                                    
+                                    # Show immediate notification
+                                    print(f"\n📱 NEW SMS RECEIVED - Index {sms_index}")
+                                    print("=" * 60)
+                                    print(f"⏰ Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                                    
+                                    # Try direct SMS read with AT+CMGR (simple and fast)
+                                    try:
+                                        logger.info(f"Attempting direct read of SMS #{sms_index}...")
+                                        
+                                        # Use direct UART functions (we're already in the listening loop)
+                                        logger.info(f"Sending AT+CMGR={sms_index} command...")
+                                        
+                                        # Send the read command directly without send_at (avoid lock issues)
+                                        try:
+                                            flush_uart()  # Clear any pending data
+                                            
+                                            command = f"AT+CMGR={sms_index}"
+                                            if SHOW_RAW_DEBUG:
+                                                print(f"RAW SEND: {repr(command + chr(13) + chr(10))}")
+                                            uart_send(command)
+                                            time.sleep(0.5)  # Wait for response
+                                            
+                                            # Read response
+                                            response = uart_read(timeout=3)
+                                            if SHOW_RAW_DEBUG:
+                                                print(f"RAW RECEIVE: {repr(response)}")
+                                            
+                                            logger.info(f"Got response: {response[:50]}...")
+                                        except Exception as uart_error:
+                                            logger.error(f"UART error: {uart_error}")
+                                            response = ""
+                                        
+                                        if "+CMGR:" in response:
+                                            # Parse the response quickly
+                                            lines = response.strip().split('\n')
+                                            sender = "Unknown"
+                                            timestamp = "Unknown"
+                                            content = "Could not parse content"
+                                            
+                                            for i, line in enumerate(lines):
+                                                if '+CMGR:' in line:
+                                                    # Parse header: +CMGR: "status","sender","","timestamp"
+                                                    try:
+                                                        parts = line.split(',')
+                                                        if len(parts) >= 2:
+                                                            sender = parts[1].strip(' "')
+                                                        if len(parts) >= 4:
+                                                            timestamp = parts[3].strip(' "')
+                                                    except:
+                                                        pass
+                                                    
+                                                    # Content is usually on the next line
+                                                    if i + 1 < len(lines) and lines[i + 1].strip():
+                                                        content = lines[i + 1].strip()
+                                                    break
+                                            
+                                            # Display the message
+                                            print(f"� From: {sender}")
+                                            if timestamp != "Unknown":
+                                                print(f"⏰ Time: {timestamp}")
+                                            print(f"💬 Message: {content}")
+                                            print("=" * 60)
+                                            
+                                            logger.info(f"✓ Successfully read SMS from {sender}: {content[:30]}...")
+                                            
+                                        else:
+                                            # Direct read failed, show basic info
+                                            print(f"⚠️  Could not read message content (AT+CMGR failed)")
+                                            print(f"📍 SMS stored at index: {sms_index}")
+                                            print(f"📍 Response: {response.strip()[:100]}...")
+                                            print("=" * 60)
+                                            logger.warning(f"Direct SMS read failed: {response[:100]}...")
+                                        
+                                    except Exception as read_error:
+                                        print(f"❌ Error reading SMS: {read_error}")
+                                        print(f"📍 SMS notification received for index: {sms_index}")
+                                        print("=" * 60)
+                                        logger.error(f"SMS read exception: {read_error}")
+                                    
+                                    # Always try to delete the message to prevent backlog
+                                    if AUTO_DELETE_SMS:
+                                        try:
+                                            logger.info(f"Deleting SMS #{sms_index} to keep storage clean...")
+                                            # Use direct UART for delete as well
+                                            try:
+                                                flush_uart()  # Clear any pending data
+                                                
+                                                delete_command = f"AT+CMGD={sms_index}"
+                                                if SHOW_RAW_DEBUG:
+                                                    print(f"DELETE RAW SEND: {repr(delete_command + chr(13) + chr(10))}")
+                                                uart_send(delete_command)
+                                                time.sleep(0.5)  # Wait for response
+                                                
+                                                delete_response = uart_read(timeout=2)
+                                                if SHOW_RAW_DEBUG:
+                                                    print(f"DELETE RAW RECEIVE: {repr(delete_response)}")
+                                                
+                                                if "OK" in delete_response:
+                                                    print(f"🗑️  Message #{sms_index} deleted from storage")
+                                                    logger.info(f"✓ Deleted SMS #{sms_index}")
+                                                else:
+                                                    print(f"⚠️  Could not delete message #{sms_index}")
+                                                    logger.warning(f"Delete failed: {delete_response}")
+                                                    
+                                            except Exception as uart_delete_error:
+                                                logger.error(f"UART delete error: {uart_delete_error}")
+                                                print(f"❌ UART delete error: {uart_delete_error}")
+                                                
+                                        except Exception as delete_error:
+                                            logger.error(f"Delete failed: {delete_error}")
+                                            print(f"❌ Delete error: {delete_error}")
+                                
+                                else:
+                                    logger.warning(f"Could not extract SMS index from: {message}")
+                            except Exception as e:
+                                logger.warning(f"Failed to parse SMS notification: {e}")
+                                # Fall back to reading all messages
+                                logger.info("Reading all messages as fallback...")
+                                try:
+                                    messages = self.check_and_read_sms()
+                                    self.display_messages(messages)
+                                    # Delete all messages to prevent re-processing
+                                    if messages:
+                                        self.delete_all_sms()
+                                except Exception as fallback_error:
+                                    logger.error(f"Fallback message reading failed: {fallback_error}")
+                        
+                        # Also check for other unsolicited messages
+                        elif message.strip() and not message.startswith('AT'):
+                            if SHOW_RAW_DEBUG:
+                                print(f"Other notification: {message.strip()}")
+                
+                time.sleep(0.1)  # Short polling interval
+                
+        except KeyboardInterrupt:
+            logger.info("\n📱 Stopped listening for SMS")
+    
+    def read_single_sms(self, index, auto_delete=True):
+        """Read a single SMS message by index and optionally delete it"""
+        logger.info(f"Reading SMS #{index}...")
+        
+        # Use shorter timeout and proper parameter order
+        success, response = self.send_command(f"AT+CMGR={index}", 0.5, "OK", 3)
+        if not success:
+            logger.error(f"Failed to read SMS #{index}: {response}")
+            logger.warning("Trying alternative approach - reading all messages...")
+            # Fallback: read all messages and find the one we want
+            try:
+                all_messages = self.check_and_read_sms()
+                for msg in all_messages:
+                    if msg['index'] == str(index):
+                        self.display_single_message(msg)
+                        if auto_delete:
+                            logger.info(f"Auto-deleting SMS #{index} to keep storage clean...")
+                            self.delete_sms(index)
+                        return msg
+            except Exception as e:
+                logger.error(f"Fallback read failed: {e}")
+            return None
+        
+        message = None
+        if "+CMGR:" in response:
+            lines = response.split('\n')
+            for i, line in enumerate(lines):
+                if line.strip().startswith('+CMGR:'):
+                    try:
+                        # Parse header
+                        parts = line.split(',')
+                        if len(parts) >= 3:
+                            status = parts[0].split(':')[1].strip(' "')
+                            sender = parts[1].strip(' "')
+                            timestamp = ""
+                            if len(parts) >= 4:
+                                timestamp = parts[3].strip(' "')
+                            
+                            # Get message content
+                            if i + 1 < len(lines):
+                                content = lines[i + 1].strip()
+                                
+                                message = {
+                                    'index': index,
+                                    'status': status,
+                                    'sender': sender,
+                                    'timestamp': timestamp,
+                                    'content': content
+                                }
+                                
+                                self.display_single_message(message)
                                 break
-                        time.sleep(0.1)
+                    except Exception as e:
+                        logger.error(f"Failed to parse SMS: {e}")
+        
+        if message and auto_delete:
+            # Delete the message after reading to prevent accumulation
+            logger.info(f"Auto-deleting SMS #{index} to keep storage clean...")
+            self.delete_sms(index)
+        
+        return message
+    
+    def display_single_message(self, message):
+        """Display a single SMS message in a formatted way"""
+        print("\n" + "="*60)
+        print("📱 NEW SMS MESSAGE")
+        print("="*60)
+        print(f"From: {message['sender']}")
+        if message['timestamp']:
+            print(f"Time: {message['timestamp']}")
+        print(f"Status: {message['status']}")
+        print(f"Index: {message['index']}")
+        print("-" * 60)
+        print(f"Message: {message['content']}")
+        print("="*60)
+    
+    def display_messages(self, messages):
+        """Display SMS messages in a formatted way"""
+        if not messages:
+            print("📱 No SMS messages found")
+            return
+        
+        print(f"\n📱 Found {len(messages)} SMS message(s):")
+        print("="*80)
+        
+        for i, msg in enumerate(messages, 1):
+            print(f"\n[{i}] SMS #{msg['index']}")
+            print(f"    From: {msg['sender']}")
+            if msg['timestamp']:
+                print(f"    Time: {msg['timestamp']}")
+            print(f"    Status: {msg['status']}")
+            print(f"    Message: {msg['content']}")
+            print("-" * 60)
+    
+    def poll_for_sms(self, duration_seconds=None):
+        """Poll for SMS messages at regular intervals"""
+        logger.info("Using polling mode to check for SMS...")
+        
+        if duration_seconds:
+            logger.info(f"Polling for SMS for {duration_seconds} seconds...")
+        else:
+            logger.info("Polling for SMS indefinitely...")
+        
+        logger.info("Press Ctrl+C to stop")
+        
+        start_time = time.time()
+        last_message_count = 0
+        
+        try:
+            while True:
+                # Check if duration limit reached
+                if duration_seconds and (time.time() - start_time) > duration_seconds:
+                    logger.info(f"Polling duration of {duration_seconds} seconds completed")
+                    break
                 
-                response = total_response
-            
-            if SHOW_RAW_DEBUG:
-                print(f"RAW SMS RECEIVE: {repr(response)}")
-                print(f"RAW SMS RECEIVE HEX: {response.encode().hex()}")
-                print(f"DECODED SMS RESPONSE: {response.strip()}")
-            
-            if "+CMGS:" in response and "OK" in response:
-                logger.info("✓ SMS sent successfully")
-                return True
-            elif "ERROR" in response:
-                logger.error(f"✗ SMS sending failed: {response}")
-                return False
-            else:
-                logger.error(f"✗ SMS sending timeout or failed: {response}")
-                return False
+                # Check for messages
+                messages = self.check_and_read_sms()
                 
-        except Exception as e:
-            logger.error(f"Error sending SMS: {e}")
-            return False
+                # Display new messages
+                if len(messages) > last_message_count:
+                    new_messages = messages[last_message_count:]
+                    print(f"\n📱 Found {len(new_messages)} new message(s)!")
+                    for msg in new_messages:
+                        self.display_single_message(msg)
+                    last_message_count = len(messages)
+                
+                # Wait before next poll
+                time.sleep(10)  # Poll every 10 seconds
+                
+        except KeyboardInterrupt:
+            logger.info("\n📱 Stopped polling for SMS")
     
     def disconnect(self):
         """Close pigpio connection"""
@@ -626,10 +914,10 @@ class SIM800L:
         self.pi = None
 
 
-def run_complete_sms_test():
-    """Run complete SMS test suite"""
+def run_sms_receiver():
+    """Run SMS receiver - listen for incoming messages"""
     logger.info("="*60)
-    logger.info("Starting SIM800L SMS Test Suite")
+    logger.info("Starting SIM800L SMS Receiver")
     logger.info("="*60)
     
     gsm = SIM800L()
@@ -655,17 +943,6 @@ def run_complete_sms_test():
         # Step 4: Check network registration
         if not gsm.check_network_registration():
             logger.error("Network registration failed")
-            logger.info("Running network diagnostics...")
-            
-            # Try to get more information about the network
-            gsm.send_command("AT+COPS?", 2)  # Check current operator
-            gsm.send_command("AT+CGREG?", 2)  # Check GPRS registration
-            
-            # Optionally scan networks (this takes time)
-            user_choice = input("\nDo you want to scan for available networks? (y/N): ").strip().lower()
-            if user_choice == 'y':
-                gsm.scan_available_networks()
-            
             return False
         
         # Step 5: Check signal quality
@@ -673,28 +950,53 @@ def run_complete_sms_test():
             logger.error("Signal quality check failed")
             return False
         
-        # Step 6: Send test SMS
-        test_message = f"Test SMS from Pi Zero W - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        if not gsm.send_sms(TEST_PHONE_NUMBER, test_message):
-            logger.error("SMS sending test failed")
-            return False
+        # Step 6: Read existing messages first
+        logger.info("Checking for existing SMS messages...")
+        existing_messages = gsm.check_and_read_sms()
+        if existing_messages:
+            gsm.display_messages(existing_messages)
+            
+            # Ask user if they want to delete old messages
+            try:
+                choice = input("\nDelete existing messages before listening? (y/N): ").strip().lower()
+                if choice == 'y':
+                    gsm.delete_all_sms()
+                    logger.info("✓ Cleared existing messages")
+            except (EOFError, KeyboardInterrupt):
+                logger.info("Keeping existing messages")
+        
+        # Step 7: Listen for new SMS messages
+        logger.info("\n📱 SMS Receiver is ready!")
+        logger.info("Send an SMS to this SIM card number to test reception")
+        
+        # Ask for duration or listen indefinitely
+        try:
+            duration_input = input("Enter listening duration in seconds (or press Enter for indefinite): ").strip()
+            duration = int(duration_input) if duration_input else None
+        except (ValueError, EOFError, KeyboardInterrupt):
+            duration = None
+        
+        gsm.listen_for_new_sms(duration)
         
         logger.info("="*60)
-        logger.info("✓ ALL TESTS PASSED - SMS functionality working correctly!")
+        logger.info("✓ SMS Receiver session completed")
         logger.info("="*60)
         return True
         
+    except KeyboardInterrupt:
+        logger.info("\n📱 SMS Receiver stopped by user")
+        return True
     except Exception as e:
-        logger.error(f"Test suite failed with error: {e}")
+        logger.error(f"SMS Receiver failed with error: {e}")
         return False
     
     finally:
         gsm.disconnect()
 
 
-def send_custom_sms(phone_number, message):
-    """Send a custom SMS message"""
-    logger.info(f"Sending custom SMS to {phone_number}")
+def check_existing_sms():
+    """Check and display existing SMS messages"""
+    logger.info("Checking for existing SMS messages...")
     
     gsm = SIM800L()
     
@@ -708,47 +1010,57 @@ def send_custom_sms(phone_number, message):
         if not gsm.check_cpin():
             return False
         
-        success = gsm.send_sms(phone_number, message)
-        return success
+        messages = gsm.check_and_read_sms()
+        gsm.display_messages(messages)
+        
+        return len(messages) > 0
         
     except Exception as e:
-        logger.error(f"Failed to send custom SMS: {e}")
+        logger.error(f"Failed to check existing SMS: {e}")
         return False
     
     finally:
         gsm.disconnect()
 
 
+def run_complete_sms_test():
+    """Run complete SMS test suite - backwards compatibility"""
+    logger.info("Note: This script is now configured for SMS receiving.")
+    logger.info("Use send_sms.py for sending SMS messages.")
+    logger.info("Starting SMS receiver instead...")
+    return run_sms_receiver()
+
+
 if __name__ == "__main__":
     import sys
     
     if len(sys.argv) == 1:
-        # Run complete test suite
-        run_complete_sms_test()
-    elif len(sys.argv) == 3:
-        # Send custom SMS
-        phone_number = sys.argv[1]
-        message = sys.argv[2]
-        success = send_custom_sms(phone_number, message)
-        if success:
-            print("SMS sent successfully!")
-        else:
-            print("Failed to send SMS")
-            sys.exit(1)
+        # Run SMS receiver
+        run_sms_receiver()
+    elif len(sys.argv) == 2 and sys.argv[1] == "--check":
+        # Check existing messages only
+        check_existing_sms()
     else:
         print("Usage:")
-        print("  python3 send_sms.py                    # Run complete test suite")
-        print("  python3 send_sms.py <phone> <message>  # Send custom SMS")
+        print("  python3 recv_sms.py          # Listen for incoming SMS messages")
+        print("  python3 recv_sms.py --check  # Check existing messages only")
         print("")
         print("Environment variables:")
-        print("  TEST_PHONE_NUMBER - Phone number for test SMS")
         print("  SIM_PIN          - SIM card PIN if required")
         print("  RX_PIN           - GPIO pin for SIM800L TX")
         print("  TX_PIN           - GPIO pin for SIM800L RX")
         print("  BAUDRATE         - Serial communication baud rate")
         print("  SHOW_RAW_DEBUG   - Show raw communication data (true/false)")
+        print("  AUTO_DELETE_SMS  - Auto-delete SMS after reading (true/false)")
         print("")
         print("Requirements:")
         print("  - pigpio daemon running: sudo systemctl start pigpiod")
         print("  - pigpio Python library: pip3 install pigpio")
+        print("")
+        print("Features:")
+        print("  - Real-time SMS notifications")
+        print("  - Display existing messages")
+        print("  - Auto-delete messages after reading (configurable)")
+        print("  - Formatted message display")
+        print("  - Robust error handling and timeout management")
 
